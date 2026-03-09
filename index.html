@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Entropic Field</title>
+<title>Entropic Field v9</title>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
 html,body { width:100%; height:100%; background:#000; overflow:hidden; }
@@ -41,7 +41,7 @@ canvas { display:block; position:fixed; inset:0; }
 .sty-btn:last-child { border-right:none; }
 .sty-btn:hover { background:rgba(255,255,255,0.06); color:rgba(255,255,255,0.7); }
 .sty-btn.active { background:rgba(255,255,255,0.10); color:rgba(255,255,255,0.92); }
-.sty-icon { font-size:15px; line-height:1; }
+.sty-icon { font-size:15px; line-height:1; font-variant-emoji:text; }
 .sty-label {
   font-family:'Courier New',monospace; font-size:7px;
   letter-spacing:2px; text-transform:uppercase;
@@ -86,7 +86,7 @@ canvas { display:block; position:fixed; inset:0; }
   border:1px solid rgba(255,255,255,0.12); cursor:pointer;
   display:flex; align-items:center; justify-content:center;
   font-size:14px; transition:all .2s; border-radius:2px;
-  color:rgba(255,255,255,0.5);
+  color:rgba(255,255,255,0.5); font-variant-emoji:text;
 }
 .sw-btn:hover { background:rgba(255,255,255,0.12); color:rgba(255,255,255,0.9); border-color:rgba(255,255,255,0.35); }
 .sw-btn.active { background:rgba(255,255,255,0.18); color:#fff; border-color:rgba(255,255,255,0.6); }
@@ -238,17 +238,17 @@ canvas { display:block; position:fixed; inset:0; }
 <div id="ui">
   <div class="wm">Entropic Field</div>
   <div class="dz" id="dz">
-    <span>⊙</span><span>Drop audio &nbsp;·&nbsp; click to browse</span>
+    <span>⊙&#xFE0E;</span><span>Drop audio &nbsp;·&nbsp; click to browse</span>
     <input type="file" id="fi" accept="audio/*" style="display:none">
   </div>
   <div id="fn"></div>
 
   <div id="style-selector">
-    <button class="sty-btn active" data-style="0"><span class="sty-icon">✦</span><span class="sty-label">Entropic</span></button>
-    <button class="sty-btn" data-style="1"><span class="sty-icon">✦</span><span class="sty-label">Cosmos</span></button>
-    <button class="sty-btn" data-style="2"><span class="sty-icon">✦</span><span class="sty-label">Sacra</span></button>
-    <button class="sty-btn" data-style="3"><span class="sty-icon">✦</span><span class="sty-label">Geometry</span></button>
-    <button class="sty-btn" data-style="4"><span class="sty-icon">✦</span><span class="sty-label">Organic</span></button>
+    <button class="sty-btn active" data-style="0"><span class="sty-icon">✦&#xFE0E;</span><span class="sty-label">Entropic</span></button>
+    <button class="sty-btn" data-style="1"><span class="sty-icon">✦&#xFE0E;</span><span class="sty-label">Cosmos</span></button>
+    <button class="sty-btn" data-style="2"><span class="sty-icon">✦&#xFE0E;</span><span class="sty-label">Sacra</span></button>
+    <button class="sty-btn" data-style="3"><span class="sty-icon">✦&#xFE0E;</span><span class="sty-label">Geometry</span></button>
+    <button class="sty-btn" data-style="4"><span class="sty-icon">✦&#xFE0E;</span><span class="sty-label">Organic</span></button>
   </div>
 
   <button id="pb">Initialize</button>
@@ -258,21 +258,21 @@ canvas { display:block; position:fixed; inset:0; }
 <div id="style-flash"></div>
 
 <div id="style-switcher">
-  <button class="sw-btn active" data-style="0" title="Entropic">✦</button>
-  <button class="sw-btn" data-style="1" title="Cosmos">✦</button>
-  <button class="sw-btn" data-style="2" title="Sacra">✦</button>
-  <button class="sw-btn" data-style="3" title="Geometry">✦</button>
-  <button class="sw-btn" data-style="4" title="Organic">✦</button>
+  <button class="sw-btn active" data-style="0" title="Entropic">✦&#xFE0E;</button>
+  <button class="sw-btn" data-style="1" title="Cosmos">✦&#xFE0E;</button>
+  <button class="sw-btn" data-style="2" title="Sacra">✦&#xFE0E;</button>
+  <button class="sw-btn" data-style="3" title="Geometry">✦&#xFE0E;</button>
+  <button class="sw-btn" data-style="4" title="Organic">✦&#xFE0E;</button>
 </div>
 
-<button id="fs-btn" title="Fullscreen (F)">⛶</button>
+<button id="fs-btn" title="Fullscreen (F)">⛶&#xFE0E;</button>
 
 <div id="vol-wrap">
   <div id="vol-track">
     <div id="vol-fill"></div>
     <div id="vol-thumb"></div>
   </div>
-  <span id="vol-icon">♪</span>
+  <span id="vol-icon">♪&#xFE0E;</span>
 </div>
 
 <div id="kb-hints">
@@ -294,7 +294,7 @@ canvas { display:block; position:fixed; inset:0; }
 </div>
 
 <div id="hud">
-  <span id="hk" style="opacity:0;transition:opacity .06s">◉</span>
+  <span id="hk" style="opacity:0;transition:opacity .06s">◉&#xFE0E;</span>
 </div>
 <span id="struct-phase" style="
   position:fixed; right:52px; bottom:24px; z-index:20;
@@ -1294,11 +1294,11 @@ pauseBtn.addEventListener('click', ()=>{
 let currentStyle = 0;
 
 const STYLES = [
-  { name:'Entropic', icon:'✦', bloomR:1.05, bloomG:0.88, bloomB:0.50 },
-  { name:'Cosmos',   icon:'✵', bloomR:0.40, bloomG:0.65, bloomB:1.60 },
-  { name:'Sacra',    icon:'✡', bloomR:1.30, bloomG:0.65, bloomB:0.20 },
-  { name:'Geometry', icon:'◈', bloomR:0.55, bloomG:0.98, bloomB:1.20 },
-  { name:'Organic',  icon:'⬡', bloomR:0.45, bloomG:1.15, bloomB:0.40 },
+  { name:'Entropic', icon:'✦\uFE0E', bloomR:1.05, bloomG:0.88, bloomB:0.50 },
+  { name:'Cosmos',   icon:'✵\uFE0E', bloomR:0.40, bloomG:0.65, bloomB:1.60 },
+  { name:'Sacra',    icon:'✡\uFE0E', bloomR:1.30, bloomG:0.65, bloomB:0.20 },
+  { name:'Geometry', icon:'◈\uFE0E', bloomR:0.55, bloomG:0.98, bloomB:1.20 },
+  { name:'Organic',  icon:'⬡\uFE0E', bloomR:0.45, bloomG:1.15, bloomB:0.40 },
 ];
 
 document.querySelectorAll('.sty-icon, .sw-btn').forEach(el=>{
@@ -3002,7 +3002,7 @@ function render(ts){
   // [v12] Structure phase indicator
   {
     const phEl = document.getElementById('struct-phase');
-    const phaseLabels = {quiet:'◇ QUIET', building:'△ BUILD', climax:'◆ CLIMAX', breakdown:'▽ BREAK'};
+    const phaseLabels = {quiet:'◇\uFE0E QUIET', building:'△\uFE0E BUILD', climax:'◆\uFE0E CLIMAX', breakdown:'▽\uFE0E BREAK'};
     const phaseColors = {quiet:'rgba(255,255,255,0.3)', building:'rgba(255,255,255,0.45)', climax:'rgba(255,255,255,0.6)', breakdown:'rgba(255,255,255,0.35)'};
     phEl.textContent = phaseLabels[STRUCT.phase] || '';
     phEl.style.color = phaseColors[STRUCT.phase] || '';
