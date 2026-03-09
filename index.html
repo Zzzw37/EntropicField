@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Entropic Field</title>
+<title>Entropic Field v9</title>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
 html,body { width:100%; height:100%; background:#000; overflow:hidden; }
@@ -14,17 +14,17 @@ canvas { display:block; position:fixed; inset:0; }
 }
 #ui.gone { opacity:0; pointer-events:none; }
 .wm {
-  font-family:Georgia,serif; font-size:10px; letter-spacing:12px;
+  font-family:Georgia,serif; font-size:13px; letter-spacing:14px;
   color:rgba(255,220,140,0.85); text-transform:uppercase;
 }
 .dz {
-  width:320px; height:90px; border:1px solid rgba(220,175,70,0.6);
+  width:460px; max-width:85vw; height:140px; border:1px solid rgba(220,175,70,0.6);
   display:flex; flex-direction:column; align-items:center;
-  justify-content:center; gap:12px; cursor:pointer; transition:border-color .4s;
+  justify-content:center; gap:16px; cursor:pointer; transition:border-color .4s;
 }
 .dz:hover { border-color:rgba(220,175,70,0.85); }
-.dz span { font-family:'Courier New',monospace; font-size:10px;
-  letter-spacing:4px; color:rgba(235,195,100,0.8); }
+.dz span { font-family:'Courier New',monospace; font-size:13px;
+  letter-spacing:5px; color:rgba(235,195,100,0.8); }
 #fn { font-family:'Courier New',monospace; font-size:10px; letter-spacing:2px;
   color:rgba(240,205,110,0.85); min-height:14px; }
 
@@ -48,8 +48,8 @@ canvas { display:block; position:fixed; inset:0; }
 }
 
 #pb { display:none; background:none; border:1px solid rgba(220,175,70,0.55);
-  color:rgba(240,205,110,0.9); padding:11px 36px; cursor:pointer;
-  font-family:'Courier New',monospace; font-size:10px; letter-spacing:5px;
+  color:rgba(240,205,110,0.9); padding:14px 48px; cursor:pointer;
+  font-family:'Courier New',monospace; font-size:13px; letter-spacing:6px;
   text-transform:uppercase; transition:all .3s; }
 #pb:hover { border-color:rgba(220,175,70,0.9); color:rgba(255,220,140,1); }
 #hud {
@@ -225,6 +225,16 @@ canvas { display:block; position:fixed; inset:0; }
   #spectrograph-3d { bottom:72px; }
 }
 
+/* ── Copyright at bottom of upload screen ──────── */
+.copyright {
+  position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
+  font-family:'Courier New',monospace; font-size:8px;
+  letter-spacing:3px; color:rgba(220,175,70,0.6);
+  text-transform:uppercase; white-space:nowrap;
+  z-index:11;
+}
+#ui.gone .copyright { opacity:0; pointer-events:none; }
+
 /* ── Init hint at bottom of upload screen ──────── */
 .init-hint {
   font-family:'Courier New',monospace; font-size:8px;
@@ -253,6 +263,7 @@ canvas { display:block; position:fixed; inset:0; }
 
   <button id="pb">Initialize</button>
   <div class="init-hint">Space · Arrows · 1–5 · F · ? for keys</div>
+  <div class="copyright">EveryZ Studio © copyright reserved 2026</div>
 </div>
 
 <div id="style-flash"></div>
