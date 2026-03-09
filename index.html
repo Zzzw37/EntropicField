@@ -1,0 +1,3255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Entropic Field v9</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+html,body { width:100%; height:100%; background:#000; overflow:hidden; }
+canvas { display:block; position:fixed; inset:0; }
+#ui {
+  position:fixed; inset:0; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:32px;
+  background:#000; z-index:10; transition:opacity 1.2s ease;
+}
+#ui.gone { opacity:0; pointer-events:none; }
+.wm {
+  font-family:Georgia,serif; font-size:10px; letter-spacing:12px;
+  color:rgba(255,220,140,0.85); text-transform:uppercase;
+}
+.dz {
+  width:320px; height:90px; border:1px solid rgba(220,175,70,0.6);
+  display:flex; flex-direction:column; align-items:center;
+  justify-content:center; gap:12px; cursor:pointer; transition:border-color .4s;
+}
+.dz:hover { border-color:rgba(220,175,70,0.85); }
+.dz span { font-family:'Courier New',monospace; font-size:10px;
+  letter-spacing:4px; color:rgba(235,195,100,0.8); }
+#fn { font-family:'Courier New',monospace; font-size:10px; letter-spacing:2px;
+  color:rgba(240,205,110,0.85); min-height:14px; }
+
+#style-selector {
+  display:flex; gap:0; border:1px solid rgba(255,255,255,0.12);
+}
+.sty-btn {
+  padding:9px 0; width:64px; background:none; border:none;
+  border-right:1px solid rgba(255,255,255,0.08);
+  cursor:pointer; display:flex; flex-direction:column;
+  align-items:center; gap:5px; transition:background .25s;
+  color:rgba(255,255,255,0.35);
+}
+.sty-btn:last-child { border-right:none; }
+.sty-btn:hover { background:rgba(255,255,255,0.06); color:rgba(255,255,255,0.7); }
+.sty-btn.active { background:rgba(255,255,255,0.10); color:rgba(255,255,255,0.92); }
+.sty-icon { font-size:15px; line-height:1; }
+.sty-label {
+  font-family:'Courier New',monospace; font-size:7px;
+  letter-spacing:2px; text-transform:uppercase;
+}
+
+#pb { display:none; background:none; border:1px solid rgba(220,175,70,0.55);
+  color:rgba(240,205,110,0.9); padding:11px 36px; cursor:pointer;
+  font-family:'Courier New',monospace; font-size:10px; letter-spacing:5px;
+  text-transform:uppercase; transition:all .3s; }
+#pb:hover { border-color:rgba(220,175,70,0.9); color:rgba(255,220,140,1); }
+#hud {
+  position:fixed; bottom:22px; left:50%; transform:translateX(-50%);
+  display:none; gap:26px; align-items:center;
+  font-family:'Courier New',monospace; font-size:9px; letter-spacing:3px;
+  color:rgba(255,255,255,0.5);
+}
+#hud.on { display:flex; }
+#spectrograph-3d {
+  position:fixed; bottom:80px; left:50%; transform:translateX(-50%);
+  display:none; flex-direction:column; align-items:center; z-index:15;
+  font-family:'Courier New',monospace;
+  pointer-events:none;
+  width:min(560px,80vw);
+}
+#spectrograph-3d.on { display:flex; }
+#spectrograph-canvas {
+  width:100%; height:120px;
+}
+#spectrograph-labels {
+  display:flex; justify-content:space-between; width:100%;
+  font-size:7px; letter-spacing:1.5px; opacity:0.35; margin-top:2px;
+  color:rgba(255,255,255,0.5);
+}
+
+#style-switcher {
+  position:fixed; right:22px; top:50%; transform:translateY(-50%);
+  display:none; flex-direction:column; gap:6px; z-index:20;
+}
+#style-switcher.on { display:flex; }
+.sw-btn {
+  width:38px; height:38px; background:rgba(0,0,0,0.55);
+  border:1px solid rgba(255,255,255,0.12); cursor:pointer;
+  display:flex; align-items:center; justify-content:center;
+  font-size:14px; transition:all .2s; border-radius:2px;
+  color:rgba(255,255,255,0.5);
+}
+.sw-btn:hover { background:rgba(255,255,255,0.12); color:rgba(255,255,255,0.9); border-color:rgba(255,255,255,0.35); }
+.sw-btn.active { background:rgba(255,255,255,0.18); color:#fff; border-color:rgba(255,255,255,0.6); }
+
+#progress-bar {
+  position:fixed; bottom:55px; left:50%; transform:translateX(-50%);
+  display:none; flex-direction:column; align-items:center; gap:8px;
+  width:min(560px,80vw);
+}
+#progress-bar.on { display:flex; }
+#prog-track {
+  width:100%; height:2px; background:rgba(255,255,255,0.12);
+  position:relative; cursor:pointer;
+}
+#prog-track:hover { background:rgba(255,255,255,0.25); }
+#prog-fill {
+  height:100%; background:rgba(255,255,255,0.45);
+  width:0; pointer-events:none; transition:width 0.1s linear;
+}
+#prog-thumb {
+  position:absolute; top:50%; right:auto; left:0%;
+  transform:translate(-50%,-50%);
+  width:8px; height:8px; border-radius:50%;
+  background:rgba(255,255,255,0.8);
+  pointer-events:none; opacity:0; transition:opacity .2s;
+}
+#prog-track:hover #prog-thumb { opacity:1; }
+#prog-times {
+  width:100%; display:flex; justify-content:space-between;
+  font-family:'Courier New',monospace; font-size:9px; letter-spacing:2px;
+  color:rgba(255,255,255,0.4);
+}
+
+/* ── Volume control ────────────────────────────── */
+#vol-wrap {
+  position:fixed; right:22px; bottom:22px; z-index:20;
+  display:none; flex-direction:column; align-items:center; gap:6px;
+}
+#vol-wrap.on { display:flex; }
+#vol-track {
+  width:3px; height:0; background:rgba(255,255,255,0.10);
+  position:relative; cursor:pointer; transition:height .3s ease;
+  border-radius:2px; overflow:visible;
+}
+#vol-wrap:hover #vol-track,
+#vol-wrap.expanded #vol-track { height:80px; }
+#vol-fill {
+  position:absolute; bottom:0; width:100%;
+  background:rgba(255,255,255,0.40); border-radius:2px;
+  pointer-events:none; height:70%;
+}
+#vol-thumb {
+  position:absolute; left:50%; bottom:70%;
+  transform:translate(-50%,50%);
+  width:8px; height:8px; border-radius:50%;
+  background:rgba(255,255,255,0.8);
+  pointer-events:none; opacity:0; transition:opacity .2s;
+}
+#vol-wrap:hover #vol-thumb { opacity:1; }
+#vol-icon {
+  font-size:13px; color:rgba(255,255,255,0.4);
+  cursor:pointer; user-select:none; transition:color .2s;
+  padding:4px;
+}
+#vol-icon:hover { color:rgba(255,255,255,0.8); }
+
+/* ── Waveform minimap ──────────────────────────── */
+#waveform-canvas {
+  position:absolute; top:0; left:0;
+  width:100%; height:100%;
+  pointer-events:none; opacity:0.35;
+}
+
+/* ── Keyboard hints overlay ────────────────────── */
+#kb-hints {
+  position:fixed; inset:0; z-index:50;
+  display:none; align-items:center; justify-content:center;
+  background:rgba(0,0,0,0.82);
+  backdrop-filter:blur(6px);
+  animation:hintFadeIn .25s ease;
+}
+#kb-hints.on { display:flex; }
+@keyframes hintFadeIn { from{opacity:0} to{opacity:1} }
+.kb-grid {
+  display:grid; grid-template-columns:auto auto;
+  gap:10px 28px; font-family:'Courier New',monospace;
+  font-size:10px; letter-spacing:2px;
+  color:rgba(235,195,100,0.75);
+}
+.kb-key {
+  text-align:right;
+  color:rgba(255,220,140,0.9);
+  border:1px solid rgba(220,175,70,0.35);
+  padding:3px 8px; border-radius:2px;
+  font-size:9px;
+}
+.kb-desc { padding:3px 0; }
+.kb-title {
+  grid-column:1/-1; text-align:center;
+  font-size:11px; letter-spacing:6px;
+  color:rgba(255,220,140,0.85);
+  margin-bottom:8px; text-transform:uppercase;
+}
+
+/* ── Fullscreen btn ────────────────────────────── */
+#fs-btn {
+  position:fixed; left:22px; bottom:22px; z-index:20;
+  display:none; width:32px; height:32px;
+  background:none; border:1px solid rgba(255,255,255,0.10);
+  color:rgba(255,255,255,0.4); cursor:pointer;
+  font-size:12px; border-radius:2px;
+  transition:all .2s;
+}
+#fs-btn.on { display:block; }
+#fs-btn:hover {
+  border-color:rgba(255,255,255,0.35);
+  color:rgba(255,255,255,0.8);
+  background:rgba(255,255,255,0.04);
+}
+
+/* ── Style transition overlay ──────────────────── */
+#style-flash {
+  position:fixed; inset:0; z-index:5;
+  background:#000; opacity:0; pointer-events:none;
+  transition:opacity 0.15s ease;
+}
+#style-flash.flash { opacity:0.6; }
+
+/* ── Touch-friendly overrides ──────────────────── */
+@media (pointer:coarse) {
+  .sw-btn { width:44px; height:44px; font-size:16px; }
+  #pause-btn { min-width:44px; min-height:44px; font-size:14px !important; }
+  #prog-track { height:6px; }
+  #vol-track { width:5px; }
+  #fs-btn { width:44px; height:44px; font-size:15px; }
+  #spectrograph-3d { bottom:72px; }
+}
+
+/* ── Init hint at bottom of upload screen ──────── */
+.init-hint {
+  font-family:'Courier New',monospace; font-size:8px;
+  letter-spacing:3px; color:rgba(200,160,80,0.3);
+  text-transform:uppercase; margin-top:8px;
+}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div class="wm">Entropic Field</div>
+  <div class="dz" id="dz">
+    <span>⊙</span><span>Drop audio &nbsp;·&nbsp; click to browse</span>
+    <input type="file" id="fi" accept="audio/*" style="display:none">
+  </div>
+  <div id="fn"></div>
+
+  <div id="style-selector">
+    <button class="sty-btn active" data-style="0"><span class="sty-icon">✦</span><span class="sty-label">Entropic</span></button>
+    <button class="sty-btn" data-style="1"><span class="sty-icon">✦</span><span class="sty-label">Cosmos</span></button>
+    <button class="sty-btn" data-style="2"><span class="sty-icon">✦</span><span class="sty-label">Sacra</span></button>
+    <button class="sty-btn" data-style="3"><span class="sty-icon">✦</span><span class="sty-label">Geometry</span></button>
+    <button class="sty-btn" data-style="4"><span class="sty-icon">✦</span><span class="sty-label">Organic</span></button>
+  </div>
+
+  <button id="pb">Initialize</button>
+  <div class="init-hint">Space · Arrows · 1–5 · F · ? for keys</div>
+</div>
+
+<div id="style-flash"></div>
+
+<div id="style-switcher">
+  <button class="sw-btn active" data-style="0" title="Entropic">✦</button>
+  <button class="sw-btn" data-style="1" title="Cosmos">✦</button>
+  <button class="sw-btn" data-style="2" title="Sacra">✦</button>
+  <button class="sw-btn" data-style="3" title="Geometry">✦</button>
+  <button class="sw-btn" data-style="4" title="Organic">✦</button>
+</div>
+
+<button id="fs-btn" title="Fullscreen (F)">⛶</button>
+
+<div id="vol-wrap">
+  <div id="vol-track">
+    <div id="vol-fill"></div>
+    <div id="vol-thumb"></div>
+  </div>
+  <span id="vol-icon">♪</span>
+</div>
+
+<div id="kb-hints">
+  <div class="kb-grid">
+    <div class="kb-title">Keyboard</div>
+    <span class="kb-key">Space</span><span class="kb-desc">Play / Pause</span>
+    <span class="kb-key">← →</span><span class="kb-desc">Seek ±5s</span>
+    <span class="kb-key">↑ ↓</span><span class="kb-desc">Volume</span>
+    <span class="kb-key">1 – 5</span><span class="kb-desc">Visual Style</span>
+    <span class="kb-key">F</span><span class="kb-desc">Fullscreen</span>
+    <span class="kb-key">M</span><span class="kb-desc">Mute</span>
+    <span class="kb-key">?</span><span class="kb-desc">This overlay</span>
+  </div>
+</div>
+
+<div id="spectrograph-3d">
+  <canvas id="spectrograph-canvas" width="560" height="120"></canvas>
+  <div id="spectrograph-labels"><span>BASS</span><span>MID</span><span>HI</span></div>
+</div>
+
+<div id="hud">
+  <span id="hk" style="opacity:0;transition:opacity .06s">◉</span>
+</div>
+<span id="struct-phase" style="
+  position:fixed; right:52px; bottom:24px; z-index:20;
+  font-family:'Courier New',monospace;
+  font-size:9px; letter-spacing:2px; opacity:0;
+  color:rgba(255,255,255,0.5); transition:opacity 0.8s, color 0.8s;
+  display:none;
+"></span>
+<div id="progress-bar">
+  <div id="prog-track">
+    <canvas id="waveform-canvas"></canvas>
+    <div id="prog-fill"></div>
+    <div id="prog-thumb"></div>
+  </div>
+  <div id="prog-times">
+    <span id="prog-cur">0:00</span>
+    <button id="pause-btn" style="
+      background:none; border:none; color:rgba(255,255,255,0.5);
+      font-family:'Courier New',monospace; font-size:11px; letter-spacing:2px;
+      cursor:pointer; padding:0 8px; transition:color .2s;
+    ">❙❙</button>
+    <span id="prog-tot">0:00</span>
+  </div>
+</div>
+
+<script>
+// ================================================================
+// AUDIO ENGINE
+// ================================================================
+let actx, analyser, fdata, abuf, srcNode, startTime=0, startOffset=0;
+let isPlaying=false, songDuration=0;
+let seekedRecently=false;
+let gainNode;  // volume control
+let currentVolume = 0.7;
+
+var AP = { sb:0,sm:0,sh:0, rb:0,rm:0,rh:0,
+           kick:0, kickDecay:0,
+           snare:0, snareDecay:0,
+           energy:0,
+           relativeIntensity:0,
+           burstFlash:0,
+           hiDense:0,
+           dropAlert:0,
+           bassRatio:0.33, hiRatio:0.33,
+           spectralContrast:0,
+           // [v9] new signals
+           rSub:0, sSub:0,             // sub-bass (20–80Hz) raw/smooth
+           rPresence:0, sPresence:0,   // presence (3–6kHz) raw/smooth
+           spectralFlux:0,             // onset strength (spectral change)
+           onsetMid:0,                 // melodic onset (mid-band transient)
+           onsetHi:0,                  // hi onset (hat/cymbal transient)
+           burstRadius:0,              // how far particles should spread
+           cameraShake:0,              // screen shake intensity
+           trailPersist:0,             // extra trail persistence on drops
+           sustainLevel:0,             // smoothed sustain envelope
+           // [v10] refined bands + pump envelope
+           rLowMid:0, sLowMid:0,      // low-mid (258–776Hz)
+           pump:0,                     // global sidechain envelope (0=compressed, 1=released)
+           pumpDepth:0,                // how deep the pump bites (energy-scaled)
+           // [v11] megaPump: drop-triggered massive pump (0=relaxed, 1=max compression)
+           megaPump:0,
+           };
+let longTermEnergy = 0;
+let peakEnergy     = 0.01;
+let burstStrength  = 0.0;
+let pullBack       = 1.0;
+let chaosLevel     = 1.0;
+let lastBurstTime  = -999;
+var MP={bassPhase:0,midPhase:0,hiPhase:0,energyPhase:0,spectralCentroid:0.5};
+const MOUSE={x:0,y:0,tx:0,ty:0};
+window.addEventListener('mousemove',e=>{
+  MOUSE.tx=(e.clientX/window.innerWidth -0.5)*2;
+  MOUSE.ty=-(e.clientY/window.innerHeight-0.5)*2;
+});
+
+const BEAT_HISTORY = 52;
+const bassHist = new Float32Array(BEAT_HISTORY);
+const midHist  = new Float32Array(BEAT_HISTORY);
+const hiHist   = new Float32Array(BEAT_HISTORY);
+let histIdx = 0;
+let kickCooldown=0, snareCooldown=0;
+
+let lastKickTime = -999;
+let estimatedBPM = 128;
+let kickIBIs = [];
+
+// [2] build-up / drop detection
+let preBassEnergy  = 0;
+let buildupHi      = 0;
+let dropAlert      = 0;
+let postDropCooldown = 0;
+
+// [v8] windowed peak energy — sliding window for relative intensity
+const PEAK_WINDOW = 600;
+const energyWindow = new Float32Array(PEAK_WINDOW);
+let energyWinIdx = 0;
+
+// [v8] bass derivative for gradual-drop detection
+let prevBass = 0;
+let bassRiseAccum = 0;
+
+// ═══════════════════════════════════════════════════════════════════
+// [v12] SONG STRUCTURE DETECTION — RMS-based macro analysis
+//
+// Tracks rolling RMS over multiple time windows to detect:
+//   - Intro/Quiet:  low sustained RMS → wide exterior view
+//   - Build-up:     rising RMS trend → slow zoom-in
+//   - Climax/Drop:  peak RMS sustained → deep interior close-up
+//   - Breakdown:    falling RMS → slow zoom-out
+//
+// Camera responds with smooth interpolation (no sudden cuts).
+// ═══════════════════════════════════════════════════════════════════
+
+// RMS tracking windows
+const RMS_SHORT_WINDOW  = 90;   // ~1.5s at 60fps — current energy snapshot
+const RMS_LONG_WINDOW   = 600;  // ~10s — establishes baseline
+const rmsShortBuf = new Float32Array(RMS_SHORT_WINDOW);
+const rmsLongBuf  = new Float32Array(RMS_LONG_WINDOW);
+let rmsShortIdx = 0, rmsLongIdx = 0;
+let rmsShortSum = 0, rmsLongSum = 0;
+let rmsShortFilled = 0, rmsLongFilled = 0;
+
+// Peak RMS tracker (adapts to song's dynamic range)
+let rmsPeakEver = 0.01;   // max RMS seen so far (decays very slowly)
+let rmsFloorEver = 1.0;   // min sustained RMS seen
+
+// Structure state
+const STRUCT = {
+  phase: 'quiet',       // 'quiet' | 'building' | 'climax' | 'breakdown'
+  climaxLevel: 0,       // 0..1 — how "climax-like" the current moment is
+  rmsShort: 0,          // current short-window average
+  rmsLong: 0,           // current long-window average
+  rmsTrend: 0,          // positive = building, negative = falling
+  climaxThreshold: 0.6, // adaptive threshold (relative to peak)
+  timeInPhase: 0,       // frames spent in current phase
+};
+
+// Camera state — smooth interpolation targets & current values
+const CAM = {
+  // Target values (set by structure detection)
+  targetZoom: 1.0,      // 1.0 = normal, >1.0 = zoomed in (close-up)
+  targetOffX: 0.0,      // horizontal offset (normalized)
+  targetOffY: 0.0,      // vertical offset
+  targetRotZ: 0.0,      // z-axis rotation (radians)
+
+  // Current interpolated values (sent to shader)
+  zoom: 1.0,
+  offX: 0.0,
+  offY: 0.0,
+  rotZ: 0.0,
+
+  // Transition speed (lower = slower, smoother)
+  lerpSpeed: 0.012,     // base lerp rate
+  
+  // Drift animation for interest during climax
+  driftPhase: 0,
+  driftSpeed: 0.3,
+};
+
+// [v9] spectral flux: previous frame's spectrum for onset detection
+let prevSpectrum = null;
+
+// [v9] adaptive kick/snare thresholds — track recent peak for each
+let kickThreshAdapt  = 0.12;
+let snareThreshAdapt = 0.10;
+
+// [v9] per-band onset accumulators
+let prevMidBand = 0;
+let prevHiBand  = 0;
+
+// [v10] Global pump envelope — sidechain-style compressor feel
+// pumpEnv: 0 = fully compressed (kick moment), 1 = fully released (between beats)
+// Release curve follows BPM so the breathing locks to groove automatically
+let pumpEnv = 1.0;
+
+function tick_audio(dt){
+  if(!analyser) return;
+  
+  analyser.getByteFrequencyData(fdata);
+  const binCount = analyser.frequencyBinCount;
+  function avg(a,b){ let s=0; for(let i=a;i<b;i++) s+=fdata[i]; return s/((b-a)*255); }
+
+  // ═══════════════════════════════════════════════════════════════
+  // [v10] REFINED 6-BAND DECOMPOSITION
+  // At 44100Hz, fftSize=1024: each bin ≈ 43.07 Hz
+  //   Sub:       bins 1–2    (~43–86 Hz)     — sub-bass rumble, kick fundamental
+  //   Bass:      bins 1–6    (~43–258 Hz)    — full bass (includes sub)
+  //   Low-mid:   bins 6–18   (~258–776 Hz)   — warmth, bass guitar, pads, low synths
+  //   Mid:       bins 18–70  (~776–3017 Hz)  — vocal, synth lead, melody
+  //   Snare:     bins 25–90  (~1077–3876 Hz) — snare body + crack
+  //   Presence:  bins 70–140 (~3017–6030 Hz) — vocal sibilance, synth brightness
+  //   Hi:        bins 140–256(~6030–11025Hz) — cymbals, hi-hats, air, brilliance
+  // ═══════════════════════════════════════════════════════════════
+  const sub_band     = avg(1,3);
+  const bass_band    = avg(1,6);
+  const lowmid_band  = avg(6,18);
+  const mid_band     = avg(18,70);
+  const snare_band   = avg(25,90);
+  const presence_band= avg(70,140);
+  const hi_band      = avg(140, Math.min(256, binCount));
+  const h_dense      = avg(100,200);
+
+  const b = bass_band, m = mid_band, h = hi_band;
+  AP.rb = b; AP.rm = m; AP.rh = h;
+  AP.rSub = sub_band;
+  AP.rPresence = presence_band;
+  AP.rLowMid = lowmid_band;
+
+  // ── Asymmetric envelope followers (attack/release per band) ──
+  // Sub: very slow release (deep structural weight)
+  AP.sSub = sub_band > AP.sSub ? AP.sSub*0.35 + sub_band*0.65 : AP.sSub*0.88 + sub_band*0.12;
+  // Bass: slow release, fast attack
+  AP.sb = b > AP.sb ? AP.sb*0.40 + b*0.60 : AP.sb*0.78 + b*0.22;
+  // [v10] Low-mid: medium-slow (pads/chords evolve slowly)
+  AP.sLowMid = lowmid_band > AP.sLowMid
+    ? AP.sLowMid*0.38 + lowmid_band*0.62
+    : AP.sLowMid*0.80 + lowmid_band*0.20;
+  // Mid: balanced attack/release
+  AP.sm = m > AP.sm ? AP.sm*0.35 + m*0.65 : AP.sm*0.74 + m*0.26;
+  // Presence: fast attack, medium release
+  AP.sPresence = presence_band > AP.sPresence
+    ? AP.sPresence*0.30 + presence_band*0.70
+    : AP.sPresence*0.68 + presence_band*0.32;
+  // Hi: very fast (transient clarity)
+  AP.sh = h > AP.sh ? AP.sh*0.25 + h*0.75 : AP.sh*0.65 + h*0.35;
+  AP.hiDense = (AP.hiDense||0)*0.55 + h_dense*0.45;
+
+  // ── [v9] Spectral flux (onset detection) ──────────────────────
+  // Sum of positive half-wave-rectified differences across all bins
+  // This detects ANY sharp spectral change — works for all instrument types
+  if(!prevSpectrum) prevSpectrum = new Uint8Array(binCount);
+  let flux = 0;
+  for(let i=1; i<binCount; i+=2){  // sample every 2nd bin for performance
+    const diff = fdata[i] - prevSpectrum[i];
+    if(diff > 0) flux += diff;
+  }
+  flux /= (binCount * 0.5 * 255); // normalize to 0-1 range
+  // Copy current spectrum for next frame
+  prevSpectrum.set(fdata);
+
+  // Smooth spectral flux with fast attack, medium release
+  AP.spectralFlux = flux > AP.spectralFlux
+    ? AP.spectralFlux * 0.3 + flux * 0.7
+    : AP.spectralFlux * 0.82 + flux * 0.18;
+
+  // ── [v9] Per-band onset signals ─────────────────────────────
+  const midDelta = Math.max(0, m - prevMidBand);
+  const hiDelta  = Math.max(0, h - prevHiBand);
+  prevMidBand = m;
+  prevHiBand  = h;
+  // Mid onset: melodic transient (new chord, new note, vocal attack)
+  AP.onsetMid = midDelta > AP.onsetMid
+    ? AP.onsetMid * 0.3 + midDelta * 0.7
+    : AP.onsetMid * 0.78;
+  // Hi onset: hat/cymbal transient
+  AP.onsetHi = hiDelta > AP.onsetHi
+    ? AP.onsetHi * 0.25 + hiDelta * 0.75
+    : AP.onsetHi * 0.72;
+
+  // ── [v9] Sustain level — smooth envelope of overall energy ────
+  AP.sustainLevel = AP.sustainLevel * 0.96 + AP.energy * 0.04;
+
+  bassHist[histIdx % BEAT_HISTORY] = b;
+  midHist [histIdx % BEAT_HISTORY] = m;
+  hiHist  [histIdx % BEAT_HISTORY] = h;
+  histIdx++;
+
+  const HIST_KICK = 38;
+  const HIST_MID  = 22;
+  const HIST_SHORT = 8;
+  let bassSum=0, bassShortSum=0, midSum=0;
+  for(let i=0;i<HIST_KICK;i++)
+    bassSum += bassHist[(histIdx - 1 - i + BEAT_HISTORY) % BEAT_HISTORY];
+  for(let i=0;i<HIST_SHORT;i++)
+    bassShortSum += bassHist[(histIdx - 1 - i + BEAT_HISTORY) % BEAT_HISTORY];
+  for(let i=0;i<HIST_MID;i++)
+    midSum  += midHist [(histIdx - 1 - i + BEAT_HISTORY) % BEAT_HISTORY];
+  const bassMean = bassSum / HIST_KICK;
+  const bassShortMean = bassShortSum / HIST_SHORT;
+  const midMean  = midSum  / HIST_MID;
+
+  kickCooldown  = Math.max(0, kickCooldown-1);
+  snareCooldown = Math.max(0, snareCooldown-1);
+  postDropCooldown = Math.max(0, postDropCooldown-1);
+
+  const now = performance.now() / 1000;
+
+  // ── [v9] Adaptive kick threshold ─────────────────────────────
+  // Threshold slowly tracks recent kick-band peaks — adapts to loud/quiet tracks
+  kickThreshAdapt = kickThreshAdapt * 0.998 + sub_band * 0.002;
+  kickThreshAdapt = Math.max(0.06, Math.min(kickThreshAdapt, 0.25));
+  const kickAbsThresh = Math.max(0.10, kickThreshAdapt * 0.85);
+
+  const kickLongPass  = sub_band > bassMean * 1.75 && sub_band > kickAbsThresh;
+  const kickShortPass = sub_band > bassShortMean * 1.40;
+  if(kickCooldown===0 && kickLongPass && kickShortPass){
+    AP.kickDecay = Math.min(sub_band * 1.8, 1.0);
+    if(lastKickTime > 0){
+      const ibi = now - lastKickTime;
+      if(ibi > 0.28 && ibi < 1.5){
+        kickIBIs.push(ibi);
+        if(kickIBIs.length > 12) kickIBIs.shift();
+        const sorted = kickIBIs.slice().sort((a,b)=>a-b);
+        // [v9] trimmed median: drop outliers at both ends
+        const trimStart = Math.floor(sorted.length * 0.15);
+        const trimEnd   = Math.ceil(sorted.length * 0.85);
+        let ibiSum = 0, ibiCount = 0;
+        for(let i=trimStart; i<trimEnd; i++){ ibiSum += sorted[i]; ibiCount++; }
+        const medIBI = ibiCount > 0 ? ibiSum / ibiCount : sorted[Math.floor(sorted.length/2)];
+        const newBPM = Math.min(Math.max(60/medIBI, 80), 185);
+        const bpmChange = Math.abs(newBPM - estimatedBPM) / estimatedBPM;
+        estimatedBPM = bpmChange < 0.12 ? newBPM : estimatedBPM * 0.90 + newBPM * 0.10;
+      }
+    }
+    lastKickTime = now;
+    kickCooldown = Math.max(8, Math.round((60/estimatedBPM)*60*0.45));
+  }
+
+  // ── [v9] Adaptive snare threshold ────────────────────────────
+  snareThreshAdapt = snareThreshAdapt * 0.998 + snare_band * 0.002;
+  snareThreshAdapt = Math.max(0.05, Math.min(snareThreshAdapt, 0.20));
+  const snareAbsThresh = Math.max(0.08, snareThreshAdapt * 0.80);
+  
+  // [v9] Snare: spectral flux in mid-hi range confirms it's a transient, not sustained pad
+  const midHiFlux = midDelta + hiDelta;
+  if(snareCooldown===0 && snare_band > midMean*1.55 && snare_band > snareAbsThresh
+     && midHiFlux > 0.015){
+    AP.snareDecay = Math.min(snare_band * 1.4, 1.0);
+    snareCooldown = Math.max(8, Math.round((60/estimatedBPM)*60*0.40));
+  }
+
+  const beatDur = 60 / estimatedBPM;
+  AP.kickDecay  *= Math.exp(-dt / (beatDur * 0.30));
+  AP.snareDecay *= Math.exp(-dt / (beatDur * 0.26));
+  AP.kick  = AP.kickDecay;
+  AP.snare = AP.snareDecay;
+
+  // ═══════════════════════════════════════════════════════════════
+  // [v10] GLOBAL PUMP ENVELOPE — sidechain compressor feel
+  //
+  // This is ONE number that the entire visual system breathes with.
+  // pumpEnv: 0 = compressed (kick moment), 1 = fully released
+  //
+  // On kick: instantly snap toward 0 (fast attack)
+  // Between kicks: exponential release back to 1, timed to ~70% of a beat
+  //
+  // The DEPTH of the pump is energy-scaled:
+  //   - Quiet passage: pumpDepth ≈ 0 → almost no visual pump
+  //   - Building:      pumpDepth grows slowly
+  //   - Drop/climax:   pumpDepth → 0.6–1.0 → full sidechain breathing
+  //
+  // What the shader does with uPump:
+  //   - Global scale compression (everything tightens on kick, releases between)
+  //   - Brightness/density modulation (compressed = dimmer/denser, released = open)
+  //   - NOT per-particle displacement — it's an envelope, not a position offset
+  // ═══════════════════════════════════════════════════════════════
+
+  // Release: exponential curve timed to beat duration
+  // At 128 BPM: beatDur=0.47s, release ~0.33s (70% of beat)
+  const releaseRate = 1.0 / (beatDur * 0.70);
+  pumpEnv += (1.0 - pumpEnv) * Math.min(releaseRate * dt, 0.15);
+
+  // Attack: kick triggers compression
+  // The attack amount is proportional to kick strength — soft kicks = gentle dip
+  if(AP.kickDecay > 0.4 && kickCooldown <= 1){
+    const attackStr = Math.min(AP.kickDecay * 1.2, 1.0);
+    pumpEnv = pumpEnv * (1.0 - attackStr * 0.85);  // snap toward 0
+  }
+
+  // Pump depth: how much the envelope actually affects visuals
+  // Scales with energy stage — quiet=nothing, loud=full
+  // [v11] faster response: 0.92/0.08 instead of 0.95/0.05 — pump wakes up quicker
+  const rawPumpDepth = AP.relativeIntensity * 0.5 + AP.energy * 0.3 + AP.dropAlert * 0.4;
+  AP.pumpDepth = AP.pumpDepth * 0.92 + Math.min(rawPumpDepth, 1.0) * 0.08;
+
+  // Final pump signal: 0 = no effect, 1 = max compression
+  // pumpEnv=0 means "compressed", but we want uPump=1 to mean "compressed"
+  // so shader can multiply: scale *= (1.0 - uPump * depth)
+  AP.pump = (1.0 - pumpEnv) * AP.pumpDepth;
+
+  // [v10] Energy calculation with 6-band weighting
+  AP.energy = AP.sSub*0.15 + AP.sb*0.15 + AP.sLowMid*0.15 + AP.sm*0.25 + AP.sh*0.15 + AP.sPresence*0.15;
+
+  // [v10] Spectral balance — include lowMid
+  const bandTotal = AP.sb + AP.sLowMid + AP.sm + AP.sh + 0.001;
+  AP.bassRatio = AP.sb / bandTotal;
+  AP.hiRatio   = AP.sh / bandTotal;
+  AP.spectralContrast = AP.spectralContrast * 0.92 + (AP.bassRatio - AP.hiRatio) * 0.08;
+
+  // [v8] Windowed peak energy
+  energyWindow[energyWinIdx % PEAK_WINDOW] = AP.energy;
+  energyWinIdx++;
+  let windowMax = 0;
+  const filled = Math.min(energyWinIdx, PEAK_WINDOW);
+  for(let i=0; i<filled; i+=8){
+    const val = energyWindow[(energyWinIdx - 1 - i + PEAK_WINDOW) % PEAK_WINDOW];
+    if(val > windowMax) windowMax = val;
+  }
+  peakEnergy = Math.max(windowMax * 0.92, AP.energy);
+  longTermEnergy = longTermEnergy * 0.997 + AP.energy * 0.003;
+  AP.relativeIntensity = Math.max(0,
+    (AP.energy - longTermEnergy) / (peakEnergy - longTermEnergy + 0.01)
+  );
+
+  // ── Build-up → drop detection ─────────────────────────────────
+  const bassDeriv = b - prevBass;
+  prevBass = b;
+  
+  preBassEnergy = preBassEnergy * 0.97 + b * 0.03;
+  // [v10] buildupHi uses presence+hi (true treble), excludes mid content
+  const trebleEnergy = presence_band * 0.6 + hi_band * 0.4;
+  buildupHi = buildupHi * 0.992 + (trebleEnergy - preBassEnergy * 0.5) * 0.008;
+  buildupHi = Math.max(0, buildupHi);
+
+  const bassReturn = b > preBassEnergy * 2.2 && preBassEnergy < 0.12;
+  bassRiseAccum = bassDeriv > 0.003 ? bassRiseAccum + bassDeriv : bassRiseAccum * 0.85;
+  const gradualDrop = bassRiseAccum > 0.08 && preBassEnergy < 0.15 && buildupHi > 0.03;
+
+  if((bassReturn || gradualDrop) && buildupHi > 0.03 && postDropCooldown === 0){
+    dropAlert = 1.0;
+    buildupHi = 0;
+    bassRiseAccum = 0;
+    postDropCooldown = Math.round(estimatedBPM / 60 * 60 * 8);
+  }
+  dropAlert *= 0.94;
+
+  // burstFlash: every kick triggers, drop gives extra punch
+  if(AP.kickDecay > 0.08){
+    const base    = AP.kickDecay * 0.55;
+    const bonus   = AP.relativeIntensity * AP.kickDecay * 0.85;
+    const dropMul = 1.0 + dropAlert * 1.2;
+    const flashTarget = Math.min((base + bonus) * dropMul, 0.80);
+    if(flashTarget > AP.burstFlash) AP.burstFlash = flashTarget;
+  }
+  AP.burstFlash *= 0.80;
+
+  // ═══════════════════════════════════════════════════════════════
+  // [v9] EXPLOSION SYSTEM — intensity-scaled bursts
+  // ═══════════════════════════════════════════════════════════════
+  const dropBurst    = dropAlert > 0.7 && postDropCooldown > Math.round(estimatedBPM/60*60*7.5);
+  const climaxBurst  = AP.kickDecay > 0.30 && AP.relativeIntensity > 0.45 && now - lastBurstTime > 3.0;
+  // [v9] Spectral-flux burst: any massive transient (crash cymbal, impact FX) can trigger
+  const fluxBurst    = AP.spectralFlux > 0.25 && AP.relativeIntensity > 0.40 && now - lastBurstTime > 2.0;
+
+  if(dropBurst || climaxBurst || fluxBurst){
+    if(dropBurst){
+      burstStrength = 0.95 + dropAlert * 0.45;
+      AP.burstRadius = 1.8 + dropAlert * 0.8;  // [v9] wide spread on drop
+      AP.cameraShake = 0.45 + dropAlert * 0.35; // [v9] big shake
+      AP.trailPersist = 0.85;                    // [v9] trails linger
+      AP.megaPump = 1.0;                         // [v11] full mega pump on drop
+    } else if(climaxBurst){
+      burstStrength = 0.50 + AP.relativeIntensity * 0.45;
+      AP.burstRadius = 1.0 + AP.relativeIntensity * 0.6;
+      AP.cameraShake = 0.15 + AP.relativeIntensity * 0.20;
+      AP.trailPersist = 0.3;
+      AP.megaPump = 0.65 + AP.relativeIntensity * 0.35; // [v11] strong but less than drop
+    } else {
+      burstStrength = 0.35 + AP.spectralFlux * 0.5;
+      AP.burstRadius = 0.8 + AP.spectralFlux * 0.4;
+      AP.cameraShake = 0.10 + AP.spectralFlux * 0.15;
+      AP.trailPersist = 0.15;
+      AP.megaPump = Math.max(AP.megaPump, 0.45); // [v11] gentle mega for flux bursts
+    }
+    pullBack      = 0.0;
+    lastBurstTime = now;
+  }
+  // [v11] megaPump: two-phase decay — fast initial drop, then slow elastic release
+  // This gives the "slam then breathe out" feel
+  if(AP.megaPump > 0.4){
+    AP.megaPump *= 0.88;        // fast initial decay (slam phase)
+  } else {
+    AP.megaPump *= 0.955;       // slow tail release (exhale phase)
+  }
+  if(AP.megaPump < 0.005) AP.megaPump = 0;
+  // Two-phase decay
+  if(burstStrength > 0.3){
+    burstStrength *= 0.90;
+  } else {
+    burstStrength *= 0.96;
+  }
+  // Burst radius decay
+  AP.burstRadius = (AP.burstRadius || 0) * 0.94;
+  // Camera shake decay (fast)
+  AP.cameraShake = (AP.cameraShake || 0) * 0.85;
+  // Trail persistence decay
+  AP.trailPersist = (AP.trailPersist || 0) * 0.92;
+
+  // Pull-back with elastic overshoot
+  const pullDiff = 1.0 - pullBack;
+  if(pullDiff > 0){
+    pullBack += pullDiff * 0.022;
+  } else {
+    pullBack += pullDiff * 0.08;
+  }
+  if(pullBack > 0.95 && pullBack < 1.06 && burstStrength < 0.15){
+    const overshootTarget = 1.0 + (1.0 - Math.min(burstStrength * 8, 1.0)) * 0.035;
+    pullBack += (overshootTarget - pullBack) * 0.04;
+  }
+
+  // ── D: chaos ─────────────────────────────────────────────
+  if(AP.kickDecay > 0.25 && AP.relativeIntensity > 0.35){
+    const chaosTarget = 1.0 + AP.relativeIntensity * 2.2 + dropAlert * 1.5;
+    if(chaosTarget > chaosLevel) chaosLevel = chaosTarget;
+  }
+  chaosLevel += (1.0 - chaosLevel) * 0.022;
+
+  // Phase accumulators
+  const hiAccel = 1.0 + AP.hiDense * 3.5;
+  MP.bassPhase   += (AP.rb*0.6 + AP.sb*0.4) * 0.020 + 0.003;
+  MP.midPhase    += (AP.rm*0.6 + AP.sm*0.4) * 0.014 + 0.002;
+  MP.hiPhase     += (AP.rh*0.6 + AP.sh*0.4) * 0.025 * hiAccel + 0.0015;
+  MP.energyPhase += AP.energy * 0.008 + 0.001;
+
+  const total = AP.sb+AP.sm+AP.sh+0.001;
+  MP.spectralCentroid = MP.spectralCentroid*0.97 + (AP.sh/total)*0.03;
+  AP.dropAlert = dropAlert;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// [v12] SONG STRUCTURE ANALYSIS + CAMERA CONTROL
+// ═══════════════════════════════════════════════════════════════════
+
+function updateStructureAndCamera(){
+  const energy = AP.energy;
+
+  // ── 1. Update RMS buffers ─────────────────────────────────────
+  // Short window: replace oldest sample
+  if(rmsShortFilled >= RMS_SHORT_WINDOW){
+    rmsShortSum -= rmsShortBuf[rmsShortIdx % RMS_SHORT_WINDOW];
+  }
+  rmsShortBuf[rmsShortIdx % RMS_SHORT_WINDOW] = energy;
+  rmsShortSum += energy;
+  rmsShortIdx++;
+  rmsShortFilled = Math.min(rmsShortFilled + 1, RMS_SHORT_WINDOW);
+
+  // Long window
+  if(rmsLongFilled >= RMS_LONG_WINDOW){
+    rmsLongSum -= rmsLongBuf[rmsLongIdx % RMS_LONG_WINDOW];
+  }
+  rmsLongBuf[rmsLongIdx % RMS_LONG_WINDOW] = energy;
+  rmsLongSum += energy;
+  rmsLongIdx++;
+  rmsLongFilled = Math.min(rmsLongFilled + 1, RMS_LONG_WINDOW);
+
+  STRUCT.rmsShort = rmsShortFilled > 0 ? rmsShortSum / rmsShortFilled : 0;
+  STRUCT.rmsLong  = rmsLongFilled  > 0 ? rmsLongSum  / rmsLongFilled  : 0;
+
+  // ── 2. Track peak/floor (adaptive dynamic range) ──────────────
+  // Peak decays very slowly so it adapts to the song's loudest moment
+  rmsPeakEver = Math.max(rmsPeakEver * 0.9997, STRUCT.rmsShort);
+  // Floor rises slowly toward quiet passages
+  if(STRUCT.rmsLong > 0.01 && rmsLongFilled > 120){
+    rmsFloorEver = Math.min(rmsFloorEver * 1.0001 + 0.0001, STRUCT.rmsLong * 0.5);
+  }
+
+  // ── 3. Compute normalized climax level ────────────────────────
+  // climaxLevel: 0 = at floor, 1 = at peak
+  const dynamicRange = rmsPeakEver - rmsFloorEver + 0.001;
+  const rawClimax = (STRUCT.rmsShort - rmsFloorEver) / dynamicRange;
+  STRUCT.climaxLevel = Math.max(0, Math.min(1, rawClimax));
+
+  // Trend: difference between short and long averages (positive = building)
+  STRUCT.rmsTrend = (STRUCT.rmsShort - STRUCT.rmsLong) / (dynamicRange + 0.01);
+
+  // ── 4. Determine structural phase ─────────────────────────────
+  //
+  // [v13] CLIMAX RECALIBRATION:
+  //   - Climax requires BOTH high climaxLevel AND sustained high rmsShort
+  //   - Threshold raised: cl > 0.75 (was 0.65), peak ratio 0.65 (was 0.55)
+  //   - Must sustain for at least 60 frames (~1s) before confirming climax
+  //   - Building requires stronger trend (0.10 vs 0.08)
+  //   - Breakdown exits faster to keep things responsive
+  //
+  const prevPhase = STRUCT.phase;
+  const cl = STRUCT.climaxLevel;
+  const trend = STRUCT.rmsTrend;
+
+  if(cl > 0.75 && STRUCT.rmsShort > rmsPeakEver * 0.65 && STRUCT.timeInPhase > 60){
+    STRUCT.phase = 'climax';
+  } else if(cl > 0.75 && STRUCT.rmsShort > rmsPeakEver * 0.65 && prevPhase === 'climax'){
+    // Already in climax — stay (hysteresis: easier to stay than to enter)
+    STRUCT.phase = 'climax';
+  } else if(trend > 0.10 && cl > 0.35){
+    STRUCT.phase = 'building';
+  } else if(trend < -0.05 && cl < 0.45){
+    STRUCT.phase = 'breakdown';
+  } else if(cl < 0.20){
+    STRUCT.phase = 'quiet';
+  }
+  // else: keep current phase (hysteresis)
+
+  if(STRUCT.phase !== prevPhase){
+    STRUCT.timeInPhase = 0;
+  }
+  STRUCT.timeInPhase++;
+
+  // ── 5. Set camera targets based on phase ──────────────────────
+  //
+  // [v13] CAMERA REVISION:
+  //   - Zoom range preserved (up to ~2.8x) — don't nerf the immersion
+  //   - CENTER ANCHOR: offset clamped tight so the structure never drifts off-screen
+  //   - You see both the expansion AND the global form because center holds
+  //   - Sacra & Organic bypass camera entirely (smooth return to 1.0)
+  //
+  CAM.driftPhase += 0.016 * CAM.driftSpeed;
+
+  // Sacra (style 2) and Organic (style 4): bypass camera system entirely
+  // Smooth lerp back to neutral — RMS tracking + HUD still run above
+  if(currentStyle === 2 || currentStyle === 4){
+    CAM.targetZoom = 1.0;
+    CAM.targetOffX = 0.0;
+    CAM.targetOffY = 0.0;
+    CAM.targetRotZ = 0.0;
+    CAM.lerpSpeed  = 0.025;  // fairly quick return to neutral
+  } else {
+
+    switch(STRUCT.phase){
+      case 'quiet':
+        // Wide exterior view — full structure visible
+        CAM.targetZoom = 1.0;
+        CAM.targetOffX = Math.sin(CAM.driftPhase * 0.3) * 0.012;
+        CAM.targetOffY = Math.cos(CAM.driftPhase * 0.23) * 0.008;
+        CAM.targetRotZ = Math.sin(CAM.driftPhase * 0.17) * 0.012;
+        CAM.lerpSpeed  = 0.010;
+        break;
+
+      case 'building':
+        // Zooming in — anticipation builds
+        {
+          const buildProgress = Math.min(1, cl / 0.65);
+          CAM.targetZoom = 1.0 + buildProgress * 0.7;  // up to 1.7x
+          // Drift stays small — center anchored
+          CAM.targetOffX = Math.sin(CAM.driftPhase * 0.5) * 0.03 * buildProgress;
+          CAM.targetOffY = Math.cos(CAM.driftPhase * 0.4) * 0.02 * buildProgress;
+          CAM.targetRotZ = Math.sin(CAM.driftPhase * 0.25) * 0.025 * buildProgress;
+          CAM.lerpSpeed  = 0.015;
+        }
+        break;
+
+      case 'climax':
+        // Deep zoom — but center anchor holds, global form still readable
+        {
+          const climaxIntensity = Math.min(1, (cl - 0.5) * 2.0);
+          CAM.targetZoom = 1.7 + climaxIntensity * 1.1;  // up to 2.8x
+          // Drift clamped tight: center stays put
+          const driftAmp = 0.03 + climaxIntensity * 0.04;
+          CAM.targetOffX = Math.sin(CAM.driftPhase * 0.7) * driftAmp;
+          CAM.targetOffY = Math.cos(CAM.driftPhase * 0.53) * driftAmp * 0.7;
+          CAM.targetRotZ = Math.sin(CAM.driftPhase * 0.31) * 0.035 * climaxIntensity;
+          // Bass micro-nudge — NOT drift, just texture
+          CAM.targetOffX += AP.rb * 0.018 * Math.sin(CAM.driftPhase * 3.0);
+          CAM.targetOffY += AP.rb * 0.012 * Math.cos(CAM.driftPhase * 2.7);
+          CAM.lerpSpeed  = 0.018;
+        }
+        break;
+
+      case 'breakdown':
+        // Pulling back out
+        {
+          const breakProgress = Math.min(1, STRUCT.timeInPhase / 180);
+          CAM.targetZoom = 1.7 - breakProgress * 0.7;  // ease back toward 1.0
+          CAM.targetOffX = Math.sin(CAM.driftPhase * 0.35) * 0.025 * (1 - breakProgress);
+          CAM.targetOffY = Math.cos(CAM.driftPhase * 0.28) * 0.018 * (1 - breakProgress);
+          CAM.targetRotZ = Math.sin(CAM.driftPhase * 0.2) * 0.015 * (1 - breakProgress);
+          CAM.lerpSpeed  = 0.012;
+        }
+        break;
+    }
+  }
+
+  // ── 6. Smooth interpolation ───────────────────────────────────
+  const spd = CAM.lerpSpeed;
+  CAM.zoom += (CAM.targetZoom - CAM.zoom) * spd;
+  CAM.offX += (CAM.targetOffX - CAM.offX) * spd;
+  CAM.offY += (CAM.targetOffY - CAM.offY) * spd;
+  CAM.rotZ += (CAM.targetRotZ - CAM.rotZ) * spd;
+}
+
+function getCurrentTime(){
+  if(!actx||!isPlaying) return startOffset;
+  return startOffset + (actx.currentTime - startTime);
+}
+
+function seekTo(t){
+  if(!abuf) return;
+  t = Math.max(0, Math.min(t, songDuration));
+  if(srcNode){ try{srcNode.stop();}catch(e){} }
+  startOffset = t;
+  startTime   = actx.currentTime;
+  kickCooldown = 0; snareCooldown = 0; postDropCooldown = 0;
+  pumpEnv = 1.0;  // [v10]
+  seekedRecently = true;
+
+  const pct = (t / songDuration) * 100;
+  progFill.style.width = pct + '%';
+  progThumb.style.left = pct + '%';
+  progCur.textContent = fmtTime(t);
+
+  if(isPlaying){
+    srcNode = actx.createBufferSource();
+    srcNode.buffer = abuf;
+    srcNode.connect(analyser);
+    srcNode.onended = onSongEnded;
+    srcNode.start(0, t);
+  } else {
+    srcNode = null;
+  }
+}
+
+function onSongEnded(){
+  if(seekedRecently){ seekedRecently=false; return; }
+  const ct = getCurrentTime();
+  if(ct >= songDuration - 0.5){
+    showEndOverlay();
+  }
+}
+
+function showEndOverlay(){
+  isPlaying=false;
+  fnEl.textContent='';
+  pbEl.style.display='none';
+  pbEl.textContent='Play';
+  fiEl.value='';
+  uiEl.style.display='flex';
+  uiEl.style.opacity='0';
+  hudEl.classList.remove('on');
+  progressBar.classList.remove('on');
+  document.getElementById('spectrograph-3d').classList.remove('on');
+  document.getElementById('struct-phase').style.display='none';
+  document.getElementById('style-switcher').classList.remove('on');
+  document.getElementById('vol-wrap').classList.remove('on');
+  document.getElementById('fs-btn').classList.remove('on');
+  requestAnimationFrame(()=>{
+    uiEl.style.transition='opacity 1.2s ease';
+    uiEl.style.opacity='1';
+  });
+  uiEl.classList.remove('gone');
+}
+
+// ================================================================
+// UI
+// ================================================================
+const dzEl=document.getElementById('dz'), fiEl=document.getElementById('fi');
+const fnEl=document.getElementById('fn'), pbEl=document.getElementById('pb');
+const uiEl=document.getElementById('ui'), hudEl=document.getElementById('hud');
+const progressBar=document.getElementById('progress-bar');
+const progFill=document.getElementById('prog-fill');
+const progThumb=document.getElementById('prog-thumb');
+const progCur=document.getElementById('prog-cur');
+const progTot=document.getElementById('prog-tot');
+
+function fmtTime(s){
+  s=Math.floor(s); const m=Math.floor(s/60); return m+':'+(s%60).toString().padStart(2,'0');
+}
+
+dzEl.addEventListener('click',()=>fiEl.click());
+dzEl.addEventListener('dragover',e=>e.preventDefault());
+dzEl.addEventListener('drop',e=>{ e.preventDefault(); loadf(e.dataTransfer.files[0]); });
+fiEl.addEventListener('change',e=>loadf(e.target.files[0]));
+
+async function loadf(file){
+  if(!file) return;
+  if(!actx) actx=new(window.AudioContext||window.webkitAudioContext)();
+  await actx.resume();  // fix delay — context may be suspended
+  abuf=await actx.decodeAudioData(await file.arrayBuffer());
+  songDuration=abuf.duration;
+  fnEl.textContent=file.name.replace(/\.[^/.]+$/,'');
+  pbEl.style.display='block';
+  pbEl.textContent='Play';
+}
+
+let isDragging=false;
+function seekFromEvent(e){
+  const rect=document.getElementById('prog-track').getBoundingClientRect();
+  const cx = e.touches ? e.touches[0].clientX : e.clientX;
+  const ratio=Math.max(0,Math.min(1,(cx-rect.left)/rect.width));
+  seekTo(ratio*songDuration);
+}
+document.getElementById('prog-track').addEventListener('mousedown',e=>{
+  isDragging=true; seekFromEvent(e);
+});
+document.addEventListener('mousemove',e=>{ if(isDragging) seekFromEvent(e); });
+document.addEventListener('mouseup',()=>{ isDragging=false; });
+
+// [v8] Touch events for progress bar
+document.getElementById('prog-track').addEventListener('touchstart',e=>{
+  e.preventDefault(); isDragging=true; seekFromEvent(e);
+}, {passive:false});
+document.addEventListener('touchmove',e=>{ if(isDragging){ e.preventDefault(); seekFromEvent(e); } }, {passive:false});
+document.addEventListener('touchend',()=>{ isDragging=false; });
+
+// ── [v8] Volume control ───────────────────────────────────────
+function setVolume(v){
+  currentVolume = Math.max(0, Math.min(1, v));
+  if(gainNode) gainNode.gain.value = currentVolume;
+  const pct = currentVolume * 100;
+  document.getElementById('vol-fill').style.height = pct + '%';
+  document.getElementById('vol-thumb').style.bottom = pct + '%';
+  document.getElementById('vol-icon').textContent = currentVolume < 0.01 ? '✕' : '♪';
+}
+let volDragging = false;
+function volFromEvent(e){
+  const track = document.getElementById('vol-track');
+  const rect = track.getBoundingClientRect();
+  const cy = e.touches ? e.touches[0].clientY : e.clientY;
+  const ratio = 1 - Math.max(0, Math.min(1, (cy - rect.top) / rect.height));
+  setVolume(ratio);
+}
+const volTrack = document.getElementById('vol-track');
+volTrack.addEventListener('mousedown',e=>{ volDragging=true; volFromEvent(e); });
+volTrack.addEventListener('touchstart',e=>{ e.preventDefault(); volDragging=true;
+  document.getElementById('vol-wrap').classList.add('expanded'); volFromEvent(e); }, {passive:false});
+document.addEventListener('mousemove',e=>{ if(volDragging) volFromEvent(e); });
+document.addEventListener('touchmove',e=>{ if(volDragging){ e.preventDefault(); volFromEvent(e); } }, {passive:false});
+document.addEventListener('mouseup',()=>{ volDragging=false; });
+document.addEventListener('touchend',()=>{ volDragging=false;
+  document.getElementById('vol-wrap').classList.remove('expanded'); });
+document.getElementById('vol-icon').addEventListener('click',()=>{
+  if(currentVolume > 0.01){ setVolume(0); } else { setVolume(0.7); }
+});
+// Scroll wheel volume
+document.addEventListener('wheel',e=>{
+  if(!bootDone || !isPlaying) return;
+  // Only if not hovering over progress bar
+  const progRect = document.getElementById('prog-track').getBoundingClientRect();
+  if(e.clientY > progRect.top - 20 && e.clientY < progRect.bottom + 20) return;
+  e.preventDefault();
+  setVolume(currentVolume + (e.deltaY < 0 ? 0.05 : -0.05));
+}, {passive:false});
+
+// ── [v8] Fullscreen ───────────────────────────────────────────
+function toggleFullscreen(){
+  if(!document.fullscreenElement){
+    document.documentElement.requestFullscreen().catch(()=>{});
+  } else {
+    document.exitFullscreen().catch(()=>{});
+  }
+}
+document.getElementById('fs-btn').addEventListener('click', toggleFullscreen);
+
+// ── [v8] Keyboard hints ──────────────────────────────────────
+const kbHints = document.getElementById('kb-hints');
+function toggleKbHints(){
+  kbHints.classList.toggle('on');
+}
+kbHints.addEventListener('click', ()=>{ kbHints.classList.remove('on'); });
+
+// ── [v8] Style transition flash ──────────────────────────────
+const styleFlash = document.getElementById('style-flash');
+let styleTransitionTimer = null;
+
+let bootDone = false;
+
+function startPlayback(){
+  if(srcNode){ try{srcNode.stop();}catch(e){} }
+  analyser = actx.createAnalyser();
+  analyser.fftSize = 1024;
+  analyser.smoothingTimeConstant = 0.15;   // [v8] much lower — all smoothing is custom now
+  fdata = new Uint8Array(analyser.frequencyBinCount);
+
+  // [v8] Gain node for volume control
+  if(!gainNode){
+    gainNode = actx.createGain();
+    gainNode.gain.value = currentVolume;
+    gainNode.connect(actx.destination);
+  }
+
+  srcNode = actx.createBufferSource();
+  srcNode.buffer = abuf;
+  srcNode.connect(analyser);
+  analyser.connect(gainNode);
+  srcNode.onended = onSongEnded;
+  startTime = actx.currentTime;
+  startOffset = 0;
+  srcNode.start(0);
+  isPlaying = true;
+
+  // Reset accumulated audio state for fresh track
+  longTermEnergy = 0; peakEnergy = 0.01;
+  burstStrength = 0; pullBack = 1.0; chaosLevel = 1.0;
+  lastBurstTime = -999; lastKickTime = -999;
+  kickIBIs.length = 0; estimatedBPM = 128;
+  preBassEnergy = 0; buildupHi = 0; dropAlert = 0; postDropCooldown = 0;
+  kickCooldown = 0; snareCooldown = 0;
+  prevBass = 0; bassRiseAccum = 0;
+  prevSpectrum = null; prevMidBand = 0; prevHiBand = 0;
+  kickThreshAdapt = 0.12; snareThreshAdapt = 0.10;
+  energyWindow.fill(0); energyWinIdx = 0;
+  AP.sb=0; AP.sm=0; AP.sh=0; AP.rb=0; AP.rm=0; AP.rh=0;
+  AP.sSub=0; AP.rSub=0; AP.sPresence=0; AP.rPresence=0;
+  AP.kick=0; AP.kickDecay=0; AP.snare=0; AP.snareDecay=0;
+  AP.energy=0; AP.relativeIntensity=0; AP.burstFlash=0;
+  AP.hiDense=0; AP.dropAlert=0; AP.spectralContrast=0;
+  AP.spectralFlux=0; AP.onsetMid=0; AP.onsetHi=0;
+  AP.burstRadius=0; AP.cameraShake=0; AP.trailPersist=0; AP.sustainLevel=0;
+  AP.sLowMid=0; AP.rLowMid=0; AP.pump=0; AP.pumpDepth=0; AP.megaPump=0;  // [v10][v11]
+  pumpEnv = 1.0;  // [v10]
+  MP.bassPhase=0; MP.midPhase=0; MP.hiPhase=0; MP.energyPhase=0; MP.spectralCentroid=0.5;
+  bassHist.fill(0); midHist.fill(0); hiHist.fill(0); histIdx=0;
+
+  // [v12] Reset song structure detection & camera
+  rmsShortBuf.fill(0); rmsLongBuf.fill(0);
+  rmsShortIdx=0; rmsLongIdx=0; rmsShortSum=0; rmsLongSum=0;
+  rmsShortFilled=0; rmsLongFilled=0;
+  rmsPeakEver=0.01; rmsFloorEver=1.0;
+  STRUCT.phase='quiet'; STRUCT.climaxLevel=0; STRUCT.rmsShort=0;
+  STRUCT.rmsLong=0; STRUCT.rmsTrend=0; STRUCT.timeInPhase=0;
+  CAM.targetZoom=1; CAM.targetOffX=0; CAM.targetOffY=0; CAM.targetRotZ=0;
+  CAM.zoom=1; CAM.offX=0; CAM.offY=0; CAM.rotZ=0; CAM.driftPhase=0;
+
+  uiEl.classList.add('gone');
+  setTimeout(()=>{ uiEl.style.display='none'; }, 1200);
+  hudEl.classList.add('on');
+  progressBar.classList.add('on');
+  document.getElementById('spectrograph-3d').classList.add('on');
+  document.getElementById('struct-phase').style.display='block';
+  progressBar.style.display = '';
+  document.getElementById('style-switcher').classList.add('on');
+  document.getElementById('vol-wrap').classList.add('on');
+  document.getElementById('fs-btn').classList.add('on');
+  progTot.textContent = fmtTime(songDuration);
+  pauseBtn.textContent = '❙❙';
+
+  // [v8] Render waveform minimap
+  renderWaveform();
+
+  if(!bootDone){ boot(); bootDone = true; }
+}
+
+// [v8] Waveform minimap renderer
+function renderWaveform(){
+  const wfCanvas = document.getElementById('waveform-canvas');
+  const track = document.getElementById('prog-track');
+  const rect = track.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const w = Math.floor(rect.width * dpr);
+  const h = Math.floor(rect.height * dpr) || 16;
+  wfCanvas.width = w;
+  wfCanvas.height = h;
+  wfCanvas.style.width = rect.width + 'px';
+  wfCanvas.style.height = '100%';
+  
+  const ctx = wfCanvas.getContext('2d');
+  if(!abuf || !ctx) return;
+  
+  const raw = abuf.getChannelData(0);
+  const buckets = w;
+  const samplesPerBucket = Math.floor(raw.length / buckets);
+  
+  ctx.clearRect(0,0,w,h);
+  ctx.fillStyle = 'rgba(255,255,255,0.30)';
+  
+  for(let i=0; i<buckets; i++){
+    let maxAmp = 0;
+    const start = i * samplesPerBucket;
+    // Sample every 4th for performance
+    for(let j=0; j<samplesPerBucket; j+=4){
+      const amp = Math.abs(raw[start+j] || 0);
+      if(amp > maxAmp) maxAmp = amp;
+    }
+    const barH = maxAmp * h * 0.9;
+    ctx.fillRect(i, (h-barH)/2, 1, Math.max(1, barH));
+  }
+}
+
+pbEl.addEventListener('click', startPlayback);
+
+// ── Pause / Resume ───────────────────────────────────────────
+const pauseBtn = document.getElementById('pause-btn');
+pauseBtn.addEventListener('click', ()=>{
+  if(!actx || !abuf) return;
+  if(isPlaying){
+    // Pause: record offset, suspend context
+    startOffset = getCurrentTime();
+    if(srcNode){ try{ srcNode.stop(); }catch(e){} }
+    actx.suspend();
+    isPlaying = false;
+    pauseBtn.textContent = '▶';
+  } else {
+    // Resume: restart from saved offset
+    actx.resume().then(()=>{
+      if(srcNode){ try{ srcNode.stop(); }catch(e){} }
+      srcNode = actx.createBufferSource();
+      srcNode.buffer = abuf;
+      srcNode.connect(analyser);
+      srcNode.onended = onSongEnded;
+      startTime = actx.currentTime;
+      srcNode.start(0, startOffset);
+      isPlaying = true;
+      pauseBtn.textContent = '❙❙';
+    });
+  }
+});
+
+// ── Style system ────────────────────────────────────────────────
+let currentStyle = 0;
+
+const STYLES = [
+  { name:'Entropic', icon:'✦', bloomR:1.05, bloomG:0.88, bloomB:0.50 },
+  { name:'Cosmos',   icon:'✵', bloomR:0.40, bloomG:0.65, bloomB:1.60 },
+  { name:'Sacra',    icon:'✡', bloomR:1.30, bloomG:0.65, bloomB:0.20 },
+  { name:'Geometry', icon:'◈', bloomR:0.55, bloomG:0.98, bloomB:1.20 },
+  { name:'Organic',  icon:'⬡', bloomR:0.45, bloomG:1.15, bloomB:0.40 },
+];
+
+document.querySelectorAll('.sty-icon, .sw-btn').forEach(el=>{
+  const s=parseInt(el.closest('[data-style]')?.dataset?.style??el.dataset?.style);
+  if(!isNaN(s)) el.textContent=STYLES[s].icon;
+});
+
+function setStyle(idx){
+  if(idx === currentStyle) return;
+  currentStyle=idx;
+  document.querySelectorAll('.sty-btn, .sw-btn').forEach(el=>{
+    el.classList.toggle('active', parseInt(el.dataset.style)===idx);
+  });
+  // [v8] Style transition: brief black flash to smooth the hard cut
+  styleFlash.classList.add('flash');
+  clearTimeout(styleTransitionTimer);
+  styleTransitionTimer = setTimeout(()=>{ styleFlash.classList.remove('flash'); }, 200);
+}
+
+document.querySelectorAll('.sty-btn, .sw-btn').forEach(el=>{
+  el.addEventListener('click',()=>setStyle(parseInt(el.dataset.style)));
+});
+
+document.addEventListener('keydown', e=>{
+  if(!bootDone) return;
+  // Don't capture if kb-hints is open (except Escape and ?)
+  if(kbHints.classList.contains('on') && e.code !== 'Escape' && e.key !== '?'){
+    return;
+  }
+  switch(e.code){
+    case 'Space': e.preventDefault(); pauseBtn.click(); break;
+    case 'ArrowLeft': e.preventDefault(); seekTo(Math.max(0, getCurrentTime()-5)); break;
+    case 'ArrowRight': e.preventDefault(); seekTo(Math.min(songDuration, getCurrentTime()+5)); break;
+    case 'ArrowUp': e.preventDefault(); setVolume(currentVolume + 0.05); break;
+    case 'ArrowDown': e.preventDefault(); setVolume(currentVolume - 0.05); break;
+    case 'Digit1': case 'Numpad1': setStyle(0); break;
+    case 'Digit2': case 'Numpad2': setStyle(1); break;
+    case 'Digit3': case 'Numpad3': setStyle(2); break;
+    case 'Digit4': case 'Numpad4': setStyle(3); break;
+    case 'Digit5': case 'Numpad5': setStyle(4); break;
+    case 'KeyF': toggleFullscreen(); break;
+    case 'KeyM': setVolume(currentVolume > 0.01 ? 0 : 0.7); break;
+    case 'Escape': kbHints.classList.remove('on'); break;
+  }
+  if(e.key === '?') toggleKbHints();
+});
+
+// ================================================================
+// CHAOS ATTRACTORS
+// ================================================================
+const N_LORENZ  = 25000;
+const N_ROSSLER = 20000;
+const N_THOMAS  = 15000;
+const N = N_LORENZ + N_ROSSLER + N_THOMAS;
+
+function solveLorenz(steps, sigma, rho, beta, dt){
+  let x=0.1,y=0,z=0;
+  const pts=[];
+  for(let i=0;i<2000;i++){
+    const dx=sigma*(y-x), dy=x*(rho-z)-y, dz=x*y-beta*z;
+    x+=dx*dt; y+=dy*dt; z+=dz*dt;
+  }
+  for(let i=0;i<steps;i++){
+    const dx=sigma*(y-x), dy=x*(rho-z)-y, dz=x*y-beta*z;
+    x+=dx*dt; y+=dy*dt; z+=dz*dt;
+    pts.push(x,y,z);
+  }
+  return pts;
+}
+
+function solveRossler(steps, a, b, c, dt){
+  let x=1,y=0,z=0;
+  const pts=[];
+  for(let i=0;i<1000;i++){
+    const dx=-(y+z), dy=x+a*y, dz=b+z*(x-c);
+    x+=dx*dt; y+=dy*dt; z+=dz*dt;
+  }
+  for(let i=0;i<steps;i++){
+    const dx=-(y+z), dy=x+a*y, dz=b+z*(x-c);
+    x+=dx*dt; y+=dy*dt; z+=dz*dt;
+    pts.push(x,y,z);
+  }
+  return pts;
+}
+
+function solveThomas(steps, b, dt){
+  let x=0.1,y=0,z=0;
+  const pts=[];
+  for(let i=0;i<1000;i++){
+    const dx=Math.sin(y)-b*x, dy=Math.sin(z)-b*y, dz=Math.sin(x)-b*z;
+    x+=dx*dt; y+=dy*dt; z+=dz*dt;
+  }
+  for(let i=0;i<steps;i++){
+    const dx=Math.sin(y)-b*x, dy=Math.sin(z)-b*y, dz=Math.sin(x)-b*z;
+    x+=dx*dt; y+=dy*dt; z+=dz*dt;
+    pts.push(x,y,z);
+  }
+  return pts;
+}
+
+function normalizePoints(raw){
+  let mx=Infinity,my=Infinity,mz=Infinity;
+  let Mx=-Infinity,My=-Infinity,Mz=-Infinity;
+  for(let i=0;i<raw.length;i+=3){
+    if(raw[i]<mx) mx=raw[i]; if(raw[i]>Mx) Mx=raw[i];
+    if(raw[i+1]<my) my=raw[i+1]; if(raw[i+1]>My) My=raw[i+1];
+    if(raw[i+2]<mz) mz=raw[i+2]; if(raw[i+2]>Mz) Mz=raw[i+2];
+  }
+  const scale=2/Math.max(Mx-mx,My-my,Mz-mz);
+  const cx=(Mx+mx)/2, cy=(My+my)/2, cz=(Mz+mz)/2;
+  const out=new Float32Array(raw.length);
+  for(let i=0;i<raw.length;i+=3){
+    out[i]  =(raw[i]  -cx)*scale;
+    out[i+1]=(raw[i+1]-cy)*scale;
+    out[i+2]=(raw[i+2]-cz)*scale;
+  }
+  return out;
+}
+
+function buildBase(){
+  console.log('Computing chaos attractors...');
+
+  const lRaw=solveLorenz(N_LORENZ, 10,28,8/3, 0.005);
+  const rRaw=solveRossler(N_ROSSLER, 0.2,0.2,5.7, 0.05);
+  const tRaw=solveThomas(N_THOMAS, 0.19, 0.05);
+
+  const lN=normalizePoints(lRaw);
+  const rN=normalizePoints(rRaw);
+  const tN=normalizePoints(tRaw);
+
+  const pos  = new Float32Array(N*3);
+  const seed = new Float32Array(N*3);
+  const layer= new Float32Array(N);
+
+  let idx=0;
+  for(let i=0;i<N_LORENZ;i++){
+    pos[idx*3]  = lN[i*3]*1.4 - 0.5;
+    pos[idx*3+1]= lN[i*3+1]*0.9 - 0.1;
+    pos[idx*3+2]= lN[i*3+2]*0.8;
+    layer[idx]=0;
+    seed[idx*3]=Math.random()*6.283;
+    seed[idx*3+1]=Math.random()*6.283;
+    seed[idx*3+2]=Math.random();
+    idx++;
+  }
+  for(let i=0;i<N_ROSSLER;i++){
+    const rx=rN[i*3], ry=rN[i*3+1], rz=rN[i*3+2];
+    const c=0.707, s=0.707;
+    pos[idx*3]  = (rx*c+rz*s)*1.1 + 0.55;
+    pos[idx*3+1]= ry*1.1 - 0.45;
+    pos[idx*3+2]= (-rx*s+rz*c)*0.7;
+    layer[idx]=1;
+    seed[idx*3]=Math.random()*6.283;
+    seed[idx*3+1]=Math.random()*6.283;
+    seed[idx*3+2]=Math.random();
+    idx++;
+  }
+  for(let i=0;i<N_THOMAS;i++){
+    pos[idx*3]  = tN[i*3]*1.6;
+    pos[idx*3+1]= tN[i*3+1]*1.6;
+    pos[idx*3+2]= tN[i*3+2]*1.6;
+    layer[idx]=2;
+    seed[idx*3]=Math.random()*6.283;
+    seed[idx*3+1]=Math.random()*6.283;
+    seed[idx*3+2]=Math.random();
+    idx++;
+  }
+
+  const MIN_R = 0.18;
+  const PUSH_R = 0.55;
+  for(let i=0;i<N;i++){
+    const x=pos[i*3], y=pos[i*3+1], z=pos[i*3+2];
+    const r=Math.sqrt(x*x+y*y+z*z);
+    if(r<PUSH_R && r>0.0001){
+      const push=MIN_R*(1-r/PUSH_R)*(1-r/PUSH_R);
+      const nx=x/r, ny=y/r, nz=z/r;
+      pos[i*3]  =x+nx*push;
+      pos[i*3+1]=y+ny*push;
+      pos[i*3+2]=z+nz*push;
+    }
+  }
+
+  return {pos,seed,layer};
+}
+
+// ================================================================
+// WEBGL SETUP
+// ================================================================
+const cv=document.getElementById('c');
+const gl=cv.getContext('webgl',{antialias:false,alpha:false,preserveDrawingBuffer:false});
+if(!gl){ document.body.innerHTML='<p style="color:#fff;padding:40px">WebGL not supported</p>'; }
+
+let W=0,H=0;
+let _progUid = 0;
+
+function mkShader(type,src){
+  const s=gl.createShader(type);
+  gl.shaderSource(s,src); gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))
+    console.error('Shader:',gl.getShaderInfoLog(s));
+  return s;
+}
+function mkProg(vs,fs){
+  const p=gl.createProgram();
+  gl.attachShader(p,mkShader(gl.VERTEX_SHADER,vs));
+  gl.attachShader(p,mkShader(gl.FRAGMENT_SHADER,fs));
+  gl.linkProgram(p);
+  if(!gl.getProgramParameter(p,gl.LINK_STATUS))
+    console.error('Link:',gl.getProgramInfoLog(p));
+  p.__uid = _progUid++;
+  return p;
+}
+function mkFBO(w,h){
+  const fb=gl.createFramebuffer(), tx=gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D,tx);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,tx,0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  return {fb,tx};
+}
+function mkVbo(data){
+  const b=gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER,b);
+  gl.bufferData(gl.ARRAY_BUFFER,data,gl.STATIC_DRAW);
+  return b;
+}
+function bindAttr(prog,name,buf,size){
+  const loc=gl.getAttribLocation(prog,name);
+  if(loc<0) return;
+  gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc,size,gl.FLOAT,false,0,0);
+}
+function drawQuad(prog){
+  const loc=gl.getAttribLocation(prog,'aPos');
+  gl.bindBuffer(gl.ARRAY_BUFFER,quadVbo);
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
+  gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+}
+function useTex(prog,name,unit,fbo){
+  gl.activeTexture(gl.TEXTURE0+unit);
+  gl.bindTexture(gl.TEXTURE_2D,fbo.tx);
+  gl.uniform1i(uLoc(prog,name),unit);
+}
+const _uCache = new Map();
+function uLoc(p,n){
+  const key = p.__uid + '|' + n;
+  let loc = _uCache.get(key);
+  if(loc === undefined){ loc = gl.getUniformLocation(p,n); _uCache.set(key, loc); }
+  return loc;
+}
+function u1(p,n,v){ gl.uniform1f(uLoc(p,n),v); }
+function u2(p,n,x,y){ gl.uniform2f(uLoc(p,n),x,y); }
+function u3(p,n,x,y,z){ gl.uniform3f(uLoc(p,n),x,y,z); }
+
+// ================================================================
+// SHADERS
+// ================================================================
+
+const VS_PART=`
+precision highp float;
+attribute vec3 aBase;
+attribute vec3 aSeed;
+attribute float aLayer;
+
+uniform float uT, uBass, uMid, uHi, uEnergy, uKick, uSnare, uAspect, uBurstFlash;
+uniform float uBurstStrength, uPullBack, uChaosLevel;
+uniform float uHiDense, uDropAlert;
+uniform float uBassRatio, uHiRatio, uSpectralContrast;
+uniform float uMBass, uMMid, uMHi, uMEnergy, uMCentroid;
+uniform float uStyle;
+uniform float uMouseX, uMouseY;
+// [v9] new uniforms
+uniform float uSub, uPresence;       // sub-bass and presence bands
+uniform float uSpectralFlux;          // onset strength
+uniform float uOnsetMid, uOnsetHi;   // per-band onset signals
+uniform float uBurstRadius;           // intensity-scaled burst spread
+uniform float uSustainLevel;          // smoothed sustain envelope
+// [v10] new uniforms
+uniform float uLowMid;               // low-mid band (258–776Hz) pads/chords
+uniform float uPump;                  // global sidechain envelope (0=relaxed, higher=compressed)
+uniform float uMegaPump;              // [v11] drop-triggered massive pump (0=relaxed, 1=max)
+// [v12] camera — song-structure-driven perspective shifts
+uniform float uCamZoom;               // zoom factor (1=normal, >1=zoomed in)
+uniform float uCamOffX, uCamOffY;     // camera offset (normalized)
+uniform float uCamRotZ;               // z-axis rotation (radians)
+
+varying float vBright;
+varying float vHue;
+varying float vStyle;
+varying float vAlphaMult;
+varying float vDepth;
+varying float vFlash;
+varying float vHiEnergy;
+varying float vBassWeight;
+
+float hash(float n){ return fract(sin(n)*43758.5453); }
+float noise3(vec3 p){
+  vec3 i=floor(p); vec3 f=fract(p);
+  f=f*f*(3.-2.*f);
+  float n2=i.x+i.y*57.+i.z*113.;
+  return mix(
+    mix(mix(hash(n2),hash(n2+1.),f.x),mix(hash(n2+57.),hash(n2+58.),f.x),f.y),
+    mix(mix(hash(n2+113.),hash(n2+114.),f.x),mix(hash(n2+170.),hash(n2+171.),f.x),f.y),
+    f.z);
+}
+float fbm(vec3 p){
+  return noise3(p)*0.5+noise3(p*2.1+vec3(3.7,1.5,2.9))*0.25
+        +noise3(p*4.4-vec3(1.3,2.7,0.5))*0.125;
+}
+mat2 rot2(float a){ float c=cos(a),s=sin(a); return mat2(c,-s,s,c); }
+mat3 rotY3(float a){ float c=cos(a),s=sin(a); return mat3(c,0.,s,0.,1.,0.,-s,0.,c); }
+mat3 rotX3(float a){ float c=cos(a),s=sin(a); return mat3(1.,0.,0.,0.,c,-s,0.,s,c); }
+mat3 rotZ3(float a){ float c=cos(a),s=sin(a); return mat3(c,-s,0.,s,c,0.,0.,0.,1.); }
+
+float snapF(float v, float g){ return floor(v/g+0.5)*g; }
+
+void main(){
+  vec3 pos=aBase;
+  float s0=aSeed.x, s1=aSeed.y, s2=aSeed.z;
+  float t=uT;
+  float sty=uStyle;
+
+  // ── C: explosion impulse ──────────────────────────────────
+  // [v9] Layer-delayed burst + intensity-scaled radius + shockwave ring
+  float burstDelay = aLayer * 0.35;
+  float delayedBurst = max(0.0, uBurstStrength - burstDelay * 0.5);
+  
+  vec3 explodeDir = normalize(vec3(
+    sin(s0*7.3 + s1*3.1),
+    cos(s1*5.7 - s2*2.4),
+    sin(s2*6.1 + s0*4.3)
+  ));
+  // [v9] Burst distance scales with burstRadius (drop=wide, regular=tight)
+  float radiusScale = max(1.0, uBurstRadius);
+  float explodeDist = (0.5 + hash(s0*13.7 + s1)*1.0) * delayedBurst * radiusScale;
+  vec3 explodedPos  = aBase + explodeDir * explodeDist;
+  
+  // [v9] Shockwave ring: radial ring of compression that propagates outward
+  // burstRadius decays over time, so the ring expands outward naturally
+  float particleDist = length(aBase);
+  float ringPhase = abs(particleDist - (2.5 - uBurstRadius * 1.5));
+  float ringPush  = exp(-ringPhase * ringPhase * 12.0) * uBurstStrength * 0.35;
+  explodedPos += normalize(aBase + 0.001) * ringPush;
+  
+  // Elastic pull-back with overshoot
+  float pull = uPullBack * uPullBack;
+  float overshootCompress = max(0.0, pull - 1.0) * 0.15;
+  pos = mix(explodedPos, aBase, min(pull, 1.0));
+  pos *= 1.0 - overshootCompress;
+  
+  // [v9] Spectral flux micro-displacement: onset-reactive jitter
+  // [v13] Softer oscillation frequencies (was t*3.0/2.5/4.0 → t*1.2/0.9/1.5)
+  // and reduced amplitude. Original was too jittery — felt like noise, not rhythm.
+  float fluxNudge = uSpectralFlux * 0.04;
+  pos += vec3(
+    sin(s0 * 11.3 + t * 1.2) * fluxNudge,
+    cos(s1 * 9.7 + t * 0.9) * fluxNudge,
+    sin(s2 * 13.1 + t * 1.5) * fluxNudge
+  );
+  
+  // [v9] Mid onset: melodic transient pushes mid-layer particles tangentially
+  if(aLayer > 0.5 && aLayer < 1.5 && uOnsetMid > 0.02){
+    float tangentPush = uOnsetMid * 0.12;
+    pos.xz += vec2(-pos.z, pos.x) * tangentPush / max(length(pos.xz), 0.1);
+  }
+  // [v9] Hi onset: outer-layer particles sparkle-scatter
+  if(aLayer > 1.5 && uOnsetHi > 0.02){
+    pos += explodeDir * uOnsetHi * 0.08;
+  }
+
+  float mFast = sin(uMHi)*0.5+0.5;
+  float mMid  = sin(uMMid+1.3)*0.5+0.5;
+  float mSlow = sin(uMBass+2.7)*0.5+0.5;
+  float mSlow2= cos(uMEnergy+0.9)*0.5+0.5;
+
+  vec3 nc=pos*1.4+vec3(t*0.11,t*0.08,t*0.06);
+  vec3 nd=vec3(
+    fbm(nc+vec3(0.,3.7,1.3)),
+    fbm(nc+vec3(2.3,0.,4.1)),
+    fbm(nc+vec3(5.1,2.7,0.))
+  )*2.-1.;
+
+  float harm=0.;
+  float kickGlow=0.0;
+  float alphaMult=1.0;
+
+  // ════════════════════════════════════════════════════════════
+  // COSMOS v9 — GALACTIC VORTEX ENGINE, TRUE NEBULA PHYSICS
+  //
+  // COMPLETELY DIFFERENT from Entropic's attractor system.
+  //
+  // This creates a rotating spiral galaxy with:
+  //   - Multiple spiral arms (3-arm structure)
+  //   - Differential rotation (inner rotates faster)
+  //   - Dust lanes and gas clouds (procedural turbulence)
+  //   - Radial color zones: blue core → violet mid → amber rim
+  //   - Explosive flare-ups on bass kicks (star formation bursts)
+  //   - Vortex displacement swirling particles inward
+  //
+  // Layer system here is NOT attractor-based:
+  //   - Layer 0: Dense galactic core (blue-white, fast rotation)
+  //   - Layer 1: Spiral arms & dust lanes (violet-magenta, medium)
+  //   - Layer 2: Outer halo gas (amber-red, slow diffuse)
+  // ════════════════════════════════════════════════════════════
+  if(sty>0.5&&sty<1.5){
+
+    // ── CYLINDRICAL COORDS: convert base position to (radius, angle, height) ──
+    vec2 baseXZ = aBase.xz;
+    float baseRadius = length(baseXZ);
+    float baseAngle  = atan(baseXZ.y, baseXZ.x);
+    float baseHeight = aBase.y;
+    
+    // ── LAYER RADIAL DISTRIBUTION ──────────────────────────────
+    // 大幅扩大径向范围，让星系占满整个视野
+    // Layer 0: core bulge    r ∈ [0.00, 0.75]  (扩大)
+    // Layer 1: disk & arms   r ∈ [0.50, 1.85]  (扩大+重叠)
+    // Layer 2: halo corona   r ∈ [1.20, 2.80]  (大幅扩展)
+    float rMin, rMax;
+    if(aLayer < 0.5){
+      // Core: bass contracts it (strong bass = dense core, quiet = diffuse)
+      rMin = 0.00; rMax = 0.75 - uBass * 0.20;
+    } else if(aLayer < 1.5){
+      rMin = 0.50; rMax = 1.85;
+    } else {
+      // Halo: bass expands it outward (energy pushes gas outward)
+      rMin = 1.20; rMax = 2.80 + uBass * 0.30;
+    }
+    
+    // Normalize base radius (0–1.4) → map to layer band
+    float rNorm   = clamp(baseRadius / 1.4, 0.0, 1.0);
+    float rTarget = rMin + rNorm * (rMax - rMin);
+    
+    // ── DIFFERENTIAL ROTATION (inner faster than outer) ────────
+    // Real galaxies: Ω(r) ∝ 1/r^α, we use α ≈ 0.6 for visual effect
+    float rotSpeed = 1.0 / pow(max(rTarget, 0.2), 0.6);
+    
+    // Layer-specific base rotation rates
+    float layerOmega;
+    if(aLayer < 0.5){
+      layerOmega = 0.25;  // core: faster
+    } else if(aLayer < 1.5){
+      layerOmega = 0.14;  // disk: medium
+    } else {
+      layerOmega = 0.06;  // halo: slower
+    }
+    
+    // Audio modulation: MID drives rotation (melodic content = directional motion)
+    // Bass deliberately excluded — bass controls structure, not motion
+    float audioRotBoost = uMid * 0.50 + uMid * uMid * 0.25 + mMid * 0.18;
+    float totalRotation = (layerOmega * rotSpeed + audioRotBoost) * t;
+    
+    // ── SPIRAL ARM STRUCTURE (logarithmic spiral) ──────────────
+    // 3-arm galaxy: θ_arm = θ - k·ln(r), repeat every 2π/3
+    float armTightness = 3.2;  // 降低值让螺旋臂更舒展开阔
+    float armNumber = 3.0;
+    float spiralPhase = baseAngle - armTightness * log(max(rTarget, 0.01));
+    
+    // Which arm is this particle closest to?
+    float armAngle = mod(spiralPhase, 6.2832 / armNumber);
+    armAngle = abs(armAngle - 3.1416 / armNumber);  // distance to nearest arm
+    
+    // Particle density boost in arms (Gaussian profile)
+    float armDensity = exp(-armAngle * armAngle * 20.0);
+    
+    // ── DUST LANES & TURBULENCE ────────────────────────────────
+    // Procedural noise creates filamentary dust structures
+    vec3 turbCoord3D = vec3(rTarget * 5.0, baseAngle * 2.5 + t * 0.08, s1 * 5.0);  // 降低频率让结构更大
+    turbCoord3D += nd * 0.5;  // 增强 fBm 位移
+    
+    float turbNoise1 = noise3(turbCoord3D);
+    float turbNoise2 = noise3(turbCoord3D * 2.5 + vec3(s0, s1, s2) * 4.0);
+    float dustFactor = pow(turbNoise1 * 0.6 + turbNoise2 * 0.4, 1.6);
+    
+    // Dust lanes are darker → affects alpha later
+    
+    // ── GAS CLOUD POCKETS (energy-driven) ───────────────────────
+    // [v11] replaced uMEnergy (runaway accumulator) with t-based phase + energy modulation
+    vec3 gasCoord3D = vec3(rTarget * 5.0, baseAngle * 2.0 + t * 0.15 + uEnergy * 1.5, t * 0.12);
+    gasCoord3D += vec3(s0 * 2.0, uMid * 1.5, s1 * 3.0);
+    float gasPockets = noise3(gasCoord3D);
+    gasPockets = smoothstep(0.35, 0.75, gasPockets);
+    
+    // ── RADIAL DISPLACEMENT (vortex swirl) ──────────────────────
+    // Mid frequency drives the swirling vortex motion (melodic = directional)
+    float vorticityStrength = (0.3 + uMid * 0.8) * (1.0 - rTarget / 2.0);
+    vec2 vortexDirection = vec2(-sin(spiralPhase), cos(spiralPhase));
+    vec2 vortexPull = vortexDirection * vorticityStrength * 0.10;
+    
+    // ── ASSEMBLE POSITION ───────────────────────────────────────
+    // Start with target radius and angle
+    float finalRadius = rTarget;
+    float finalAngle = baseAngle + totalRotation;
+    
+    // ── KICK: EXPLOSIVE SHOCKWAVE BURST ────────────────────────
+    // Radial shockwave propagates outward, compresses inward
+    if(uKick > 0.01){
+      float kickDist = abs(baseRadius - (1.0 - uKick) * 1.4);
+      float kickRing = exp(-kickDist * kickDist * 8.0) * uKick;
+      
+      // Non-linear expansion - stronger in core, creates tension
+      float kickPower = (aLayer < 0.5) ? 0.55 : ((aLayer < 1.5) ? 0.40 : 0.28);
+      finalRadius += kickRing * kickPower;
+      
+      // Angular displacement - kick twists the galaxy
+      float kickTwist = kickRing * uKick * 0.8;
+      finalAngle += kickTwist;
+      
+      kickGlow = kickRing * 1.1;
+    }
+    
+    // Bass-driven expansion (galaxy structurally breathes with sub frequencies)
+    finalRadius *= (1.0 + uBass * 0.15);
+    // [v10] Pump: radial compression — galaxy tightens on kick, exhales between
+    finalRadius *= (1.0 - uPump * 0.18);
+    
+    // Apply rotation & vortex
+    vec2 diskPos = vec2(cos(finalAngle), sin(finalAngle)) * finalRadius;
+    diskPos += vortexPull;
+    
+    // Height (Y axis): 增加垂直厚度，创造立体的盘状结构
+    float diskThickness = 0.08;
+    if(aLayer < 0.5){
+      diskThickness = 0.15;  // core: 核心球状膨胀
+    } else if(aLayer < 1.5){
+      diskThickness = 0.25;  // disk: 主盘有明显厚度
+    } else {
+      diskThickness = 0.45;  // halo: 外围弥散成球形
+    }
+    
+    // 根据半径调整厚度 - 外围更蓬松
+    diskThickness *= (1.0 + rTarget * 0.4);
+    
+    float verticalNoise = sin(s0 * 12.0 + t * 0.5) * sin(s1 * 9.0 + t * 0.7);
+    float heightBase = baseHeight * diskThickness;
+    heightBase += verticalNoise * 0.08 * uMid;  // 增强垂直扰动
+    
+    // Mid frequency drives vertical waves (like density waves in disk)
+    // [v11] replaced uMMid*3.0 (runaway) with t-based + uMid modulation
+    heightBase += sin(finalAngle * 4.0 + rTarget * 8.0 + t * 0.3 + t * 0.25 * uMid) * 0.10 * uMid;
+    
+    // Final position
+    pos = vec3(diskPos.x, heightBase, diskPos.y);
+    
+    // Add layer-specific micro-turbulence
+    float turbScale = (0.08 + uEnergy * 0.22) * dustFactor;  // 增强扰动强度
+    pos += nd * turbScale;
+    
+    // Harmonic radial expansion + MULTI-DIMENSIONAL CORE DYNAMICS
+    harm = 0.0;
+    if(aLayer < 0.5){
+      // ── CORE: BASS = STRUCTURAL BREATHING, MID = VORTEX TWIST ──
+      // Multi-frequency breathing driven PURELY by bass
+      harm = sin(s0 * 2.0 + t * 1.2) * 0.4 
+           + sin(s0 * 4.0 + t * 2.4 - s1) * 0.2
+           + sin(s0 * 7.0 + t * 4.8) * 0.1;
+      harm *= uBass * 0.55;
+      
+      // Bass-gated radial pulses (structure)
+      float bassPulse = pow(uBass, 2.0) * 0.50;
+      harm += bassPulse * sin(s0 * 3.0 + t * 1.5);
+      
+      // MID drives NON-LINEAR twisting vortex in core
+      float coreDist = length(pos.xz);
+      float vortexPhase = atan(pos.z, pos.x) + coreDist * 8.0 + t * 0.8 + uMid * 3.0;
+      float vortexStr = (1.0 - smoothstep(0.0, 0.5, coreDist)) * uMid * 0.40;
+      pos.xz += vec2(cos(vortexPhase), sin(vortexPhase)) * vortexStr;
+      
+      // BASS vertical oscillation (structure: up/down heave)
+      float vertWave = sin(s0 * 5.0 + t * 1.8 + uBass * 3.0) 
+                     * cos(s1 * 3.0 + t * 1.2);
+      pos.y += vertWave * 0.18 * uBass * uBass;
+      
+      // MID depth pulsation (motion: push/pull)
+      // [v11] replaced uMMid*2.5 (runaway) with stable t-based phase
+      float depthPulse = sin(t * 1.5 + s2 * 4.0 + t * 0.2 * uMid) * uMid * uMid * 0.22;
+      pos.z += depthPulse;
+      
+      // MID spiral ascension (only when mid is strong)
+      float spiralHeight = pow(uMid, 2.5) * 0.28;
+      float spiralAngle = t * 2.0 + coreDist * 6.0;
+      pos.y += sin(spiralAngle) * spiralHeight;
+      pos.xz += vec2(cos(spiralAngle), sin(spiralAngle)) * spiralHeight * 0.3;
+      
+      // HI: micro-chaotic shimmer (detail layer, NOT structural)
+      float hiGate = smoothstep(0.15, 0.45, uHi);
+      vec3 hiShimmer = vec3(
+        sin(s0 * 15.3 + t * 4.1),
+        cos(s1 * 12.7 + t * 3.7),
+        sin(s2 * 17.1 + t * 5.2)
+      ) * 0.06 * hiGate * uHi;
+      pos += hiShimmer;
+      
+    } else if(aLayer < 1.5){
+      // ── DISK: MID = WAVE PROPAGATION, BASS = RADIAL BREATHING ──
+      // MID: spiral density waves
+      harm = sin(spiralPhase * 2.0 + t * 0.8) * 0.3;
+      harm *= uMid * 0.30;
+      
+      // MID: additional wave propagation
+      // [v11] replaced uMMid*2.0 (runaway) with stable t-based phase
+      float wavePhase = spiralPhase * 3.0 + t * 1.2 + t * 0.18 * uMid;
+      harm += sin(wavePhase) * uMid * 0.18;
+      
+      // MID: disk warping (bending the plane)
+      float warpPhase = spiralPhase + t * 0.6;
+      // [v10] lowMid (pads/chords) adds gentle warp, mid (vocal/lead) adds sharp warp
+      float warpAmount = sin(warpPhase * 2.0) * (uMid * uMid * 0.18 + uLowMid * 0.08);
+      pos.y += warpAmount * (1.0 - abs(pos.y) * 2.0);
+      
+      // BASS: radial breathing (structural contraction/expansion)
+      float breathePhase = t * 0.9 + s0 * 2.0;
+      float breatheStr = sin(breathePhase) * uBass * uBass * 0.12;
+      pos.xz *= (1.0 + breatheStr);
+      
+      // HI: edge sparkle — fast angular perturbation
+      float hiEdge = uHi * uHi * 0.04;
+      pos.xz += vec2(sin(s0*20.0 + t*8.0), cos(s1*18.0 + t*7.0)) * hiEdge;
+      
+    } else {
+      // ── HALO: HI = PRIMARY DRIVER, bass/mid secondary ──────────
+      // HI: shimmer and flicker (halo particles are hi-hat territory)
+      harm = sin(s0 * 6.0 + t * 3.0) * 0.25 + sin(s1 * 8.0 + t * 4.0) * 0.15;
+      harm *= uHi * 0.28;
+      
+      // HI: floating drift — hi-hat drives outer particle activity
+      float driftX = sin(s0 * 5.0 + t * 0.7) * cos(s1 * 3.0 + t * 0.5);
+      float driftY = cos(s1 * 4.0 + t * 0.8) * sin(s2 * 3.5 + t * 0.6);
+      float driftZ = sin(s2 * 6.0 + t * 0.9) * cos(s0 * 2.5 + t * 0.4);
+      pos += vec3(driftX, driftY, driftZ) * (0.02 + uHi * 0.14);
+      
+      // HI-HAT DENSITY: flicker/twinkle for outer particles
+      float flickerPhase = s0 * 20.0 + t * uHiDense * 15.0;
+      float flicker = step(0.45, fract(flickerPhase));
+      alphaMult *= (0.55 + 0.45 * flicker);
+      
+      // BASS: expanding shell (structural push)
+      float shellExpansion = sin(t * 0.3 + s1 * 2.0) * uBass * uBass * 0.12;
+      pos *= (1.0 + shellExpansion);
+    }
+    pos += normalize(pos + 0.001) * harm;
+    
+    // GLOBAL ROTATION MODULATION - MID drives spin (melodic = motion)
+    // Bass excluded from spin — bass is structural only
+    float midSpin = pow(uMid, 2.0) * 1.0;     // mid = primary spin driver
+    float dropSpin = uDropAlert * 1.5;          // drops still cause dramatic spin
+    float hiSpin = uHiDense * 0.8;              // hi-hat adds subtle acceleration
+    float totalSpin = midSpin + dropSpin + hiSpin;
+    
+    // Layer-specific spin rates (core spins fastest)
+    if(aLayer < 0.5){
+      pos.xz = rot2(totalSpin * 0.7) * pos.xz;
+      pos.xy = rot2(totalSpin * 0.4) * pos.xy;
+    } else if(aLayer < 1.5){
+      pos.xz = rot2(totalSpin * 0.4) * pos.xz;
+    } else {
+      pos.xz = rot2(totalSpin * 0.2) * pos.xz;
+    }
+    
+    // Snare: violent vertical jitter - only when snare is strong
+    if(uSnare > 0.05){  // increased threshold - don't trigger on weak snares
+      float snareJitter = uSnare * uSnare * (aLayer < 0.5 ? 0.15 : 0.10);  // squared snare
+      pos.y += sin(s1 * 20.0 + t * 25.0) * snareJitter;
+      pos.x += cos(s0 * 18.0 + t * 22.0) * snareJitter * 0.5;
+    }
+    
+    // Final scaling - 减小缩放让星系填满屏幕
+    pos *= 0.95;  // 从 1.35 降到 0.95，让粒子分布更广
+    
+    // ── COLOR ZONES (radial gradient + HI-DRIVEN COLOR TEMPERATURE) ──
+    // Base hue from radial position, then hi shifts toward cooler/bluer
+    float hiColorShift = uHi * 0.10;   // hi active = push toward blue-violet
+    float bassWarmShift = uBass * 0.06; // bass active = push toward warm gold
+    float zoneMix = clamp(rTarget * 1.2, 0.0, 1.0);
+    
+    if(aLayer < 0.5){
+      // Core: blue-white, hi pushes deeper blue, bass pushes white-hot
+      vHue = 0.54 + pos.y * 0.04 + gasPockets * 0.03 + hiColorShift - bassWarmShift;
+    } else if(aLayer < 1.5){
+      // Disk: violet-magenta, hi pushes more violet, bass warms toward rose
+      vHue = 0.72 + armDensity * 0.06 - dustFactor * 0.05 + hiColorShift * 0.7 - bassWarmShift * 0.5;
+    } else {
+      // Halo: gold-rose, hi pushes toward violet, bass deepens gold
+      vHue = 0.90 + pos.x * 0.04 + gasPockets * 0.03 + hiColorShift * 1.2 - bassWarmShift * 0.8;
+    }
+    
+    // ── BRIGHTNESS NORMALIZATION ────────────────────────────────
+    // Core is densest → aggressively dim per particle
+    // Halo is sparse  → brighter per particle  
+    if(aLayer < 0.5){
+      alphaMult = 0.55 * (0.6 + armDensity * 0.3);  // reduced from 0.80
+    } else if(aLayer < 1.5){
+      alphaMult = 0.85 * (0.5 + armDensity * 0.4 + gasPockets * 0.3);  // reduced from 1.10
+    } else {
+      alphaMult = 1.20 * (0.7 + gasPockets * 0.4);  // reduced from 1.40
+    }
+    
+    // Dust lanes reduce brightness
+    alphaMult *= (0.5 + dustFactor * 0.5);
+    // [v10] Pump dims galaxy on compression, opens on release
+    alphaMult *= (1.0 - uPump * 0.12);
+    
+    vDepth = pos.z + 1.5;
+
+  // ════════════════════════════════════════════════════════════
+  // SACRA — frequency-decoupled v6
+  //   Bass → ring radius pulsation (structural breathing)
+  //   Mid  → ring rotation speed (orbital motion)
+  //   Hi   → color temperature shift, column particle shimmer
+  // ════════════════════════════════════════════════════════════
+  } else if(sty>1.5&&sty<2.5){
+
+    float r0=0.30, r1=0.58, r2=0.88;
+    float rTarget = aLayer<0.5 ? r0 : (aLayer<1.5 ? r1 : r2);
+    float isCol = step(1.5,aLayer)*step(s2,0.20);
+
+    // BASS: ring radius pulsation (structural)
+    float pulseR = rTarget*(1.0 + uBass*0.25 + uKick*0.40);
+    // [v10] Pump: rings contract on kick, expand between beats
+    pulseR *= (1.0 - uPump * 0.15);
+
+    // MID: ring rotation speed (melodic = orbital motion)
+    float rSpeed = aLayer<0.5 ? 0.14 : (aLayer<1.5 ? 0.07 : 0.035);
+    rSpeed += uMid*0.08;  // mid drives rotation, not bass
+    float angle = s0*6.2832 + t*rSpeed;
+
+    // Each ring on its own Y plane
+    float ringYBase = aLayer<0.5 ? 0.12 : (aLayer<1.5 ? 0.0 : -0.14);
+    float ringTilt  = aLayer<0.5 ? 0.08 : (aLayer<1.5 ? -0.05 : 0.04);
+    // MID: vertical wave modulation on rings
+    float ringY = ringYBase + sin(angle)*ringTilt
+                + (s1-0.5)*0.020 + sin(s0*10.+t*1.8)*0.010*uMid;
+
+    // MID: column rise speed
+    float colY   = fract(s1*0.7+t*(0.06+uMid*0.12))*4.0-1.5;
+    float colR   = s0*0.045+0.004;
+    float colAng = s0*6.2832+t*0.18;
+    float useC   = clamp(isCol,0.0,1.0);
+    float px     = mix(cos(angle)*pulseR, cos(colAng)*colR, useC);
+    float py     = mix(ringY,             colY,             useC);
+    float pz     = mix(sin(angle)*pulseR, sin(colAng)*colR, useC);
+    pos = vec3(px, py, pz);
+
+    // HI: color temperature shift — hi pushes from gold toward white/crimson
+    float sacraHiShift = uHi * 0.10;
+    float ringHue = aLayer<0.5 ? 0.1 - sacraHiShift : (aLayer<1.5 ? 0.45 + sacraHiShift : 0.75 + sacraHiShift);
+    vHue  = mix(ringHue, 0.0, useC);
+
+    harm  = 0.4+pulseR*0.3+useC*0.4;
+    alphaMult = mix(0.9, 1.6, useC);
+    alphaMult *= aLayer<0.5 ? 0.25 : (aLayer<1.5 ? 0.50 : 0.85);  // more aggressive dimming for inner rings
+
+    // HI: column particles flicker/sparkle
+    if(useC > 0.5){
+      float colFlicker = step(0.42, fract(s1*15.0 + t * uHiDense * 10.0));
+      alphaMult *= (0.55 + 0.45 * colFlicker);
+    }
+
+    // BASS: ring thickness breathing — bass makes rings tighter/denser
+    if(useC < 0.5){
+      float ringThicken = uBass * 0.015;
+      pos.y += sin(angle * 3.0 + t*0.5) * ringThicken;
+    }
+
+    vDepth = pos.z + 1.5;
+
+  // ════════════════════════════════════════════════════════════
+  // ════════════════════════════════════════════════════════════
+  // GEOMETRY — frequency-decoupled v6 + [v11] dual-layer pump
+  //   (A) Deep organic breathing: lattice scale undulates with bass phase
+  //   (B) Drop megaPump: massive slam compression → elastic release
+  //   Bass → snap strength (structure), kick pulse
+  //   Mid  → rotation axes (motion)
+  //   Hi   → edge shimmer, lattice sparkle, color temperature
+  // ════════════════════════════════════════════════════════════
+  } else if(sty>2.5&&sty<3.5){
+
+    float g = 0.50;
+    // BASS: snap strength — bass defines structural rigidity
+    // Strong bass = loose (particles blown off grid), quiet = tight grid
+    float snapStr = clamp(0.45 - uBass*0.35, 0.08, 0.45) * (1.0-uKick*0.85);
+    // [v10] Pump modulates snap: compressed = lattice loosens
+    snapStr *= (1.0 - uPump * 0.55);
+    // [v11] megaPump: on drop, snap almost completely dissolves — lattice shatters
+    snapStr *= (1.0 - uMegaPump * 0.85);
+    float lx = snapF(pos.x, g);
+    float ly = snapF(pos.y, g);
+    float lz = snapF(pos.z, g);
+    vec3 lattice = vec3(lx, ly, lz);
+    pos = mix(pos, lattice, snapStr);
+
+    // MID: rotation — pure mid drives rotation axes
+    // [v11] Reduced coefficients for slow, majestic tumble (was 0.22/0.28, 0.16/0.20, 0.14/0.18)
+    pos = rotY3(uMMid*0.08 + sin(uMMid*0.12)*0.10)*pos;
+    pos = rotX3(uMMid*0.05 + sin(uMMid*0.07)*0.08)*pos;
+    pos = rotZ3(uMMid*0.04 + sin(uMMid*0.15)*0.06)*pos;
+
+    // ── (A) DEEP ORGANIC BREATHING ──────────────────────────
+    // [v11] Use uT (real time) for predictable, slow undulation
+    // instead of uMBass which is a runaway accumulator.
+    // Multiple incommensurate frequencies for complex, non-repeating rhythm.
+    // Per-particle phase offset (s0, s2) makes it look like a living wave.
+    float breathe = 1.0
+      + sin(t*0.4 + s0*2.1)*0.04          // slow wave ~0.06Hz, per-particle offset
+      + sin(t*0.23 + s2*1.7)*0.025        // slower wave, different axis
+      + sin(t*0.15)*0.03;                 // global glacial tide all particles share
+    // Bass energy gently modulates breathing amplitude (louder = deeper breath)
+    breathe = 1.0 + (breathe - 1.0) * (0.6 + uBass * 0.8);
+
+    // D: chaos — lattice nodes drift off-grid smoothly
+    float chaosG = uChaosLevel - 1.0;
+    if(chaosG > 0.0){
+      vec3 chaosDirG = vec3(hash(s0*5.3+s1)-0.5, hash(s1*6.7+s2)-0.5, hash(s2*4.9+s0)-0.5);
+      pos += normalize(chaosDirG+0.001) * chaosG * (0.10 + hash(s0*9.1+s2)*0.15);
+    }
+
+    // BASS: kick — subtle structural weight shift, not a radial explosion
+    // [v11] Reduced from 0.55 to 0.15, and added per-particle variation
+    // so it feels like a pressure wave passing through, not uniform inflation
+    float kickWeight = uKick * uKick * (0.15 + s0*0.08);
+    pos *= breathe + kickWeight;
+
+    // ── (B) MEGAPUMP: LATTICE SHATTER → REASSEMBLE ────────────
+    // On drop: particles scatter away from their lattice positions
+    // along per-particle unique directions, then drift back as
+    // megaPump decays. No uniform scale — each particle has its
+    // own trajectory, creating a crystalline explosion/reformation.
+    float megaC = uMegaPump * uMegaPump;  // square for snappy attack
+    if(uMegaPump > 0.01){
+      // Each particle gets a unique scatter direction (seeded, deterministic)
+      vec3 scatterDir = vec3(
+        hash(s0*7.3 + s1*3.1) - 0.5,
+        hash(s1*5.7 + s2*2.4) - 0.5,
+        hash(s2*6.1 + s0*4.3) - 0.5
+      );
+      scatterDir = normalize(scatterDir + 0.001);
+      // Scatter distance: varies per particle for organic feel
+      // Particles near lattice nodes scatter further (they have more "structure to break")
+      float nearLattice = 1.0 - clamp(length(pos - lattice) * 4.0, 0.0, 1.0);
+      float scatterDist = megaC * (0.25 + hash(s0*11.3+s2)*0.20) * (0.5 + nearLattice * 0.5);
+      pos += scatterDir * scatterDist;
+    }
+
+    // Kick: radial blast glow — [v11] toned down from 1.2 to 0.7 for subtlety
+    float kickGlow2 = uKick * exp(-length(pos-lattice)*4.0) * 0.7;
+    // [v11] megaPump adds massive glow at slam moment
+    kickGlow2 += megaC * 1.5 * exp(-length(pos)*2.0);
+    kickGlow = kickGlow2;
+
+    // Snare: shear
+    float snapY = uSnare * g * sin(t*35.0) * 0.9;
+    pos.y += snapY;
+    pos.x += uSnare * 0.12 * cos(t*28.0);
+
+    // HI: shimmer the lattice edges — hi-hat makes edges sparkle
+    pos += normalize(pos+0.001) * uHi * sin(s0*17.+t*8.) * 0.10;
+    // HI: micro-jitter on lattice nodes
+    float hiJitter = uHi * uHi * 0.03;
+    pos += vec3(sin(s0*22.+t*9.), cos(s1*20.+t*8.), sin(s2*24.+t*10.)) * hiJitter;
+
+    // Scale up to fill screen
+    // [v10] Pump: lattice breathes — compressed = slightly expanded
+    pos *= 1.35 * (1.0 + uPump * 0.08);
+
+    // HI: color temperature shift — hi pushes toward brighter cyan
+    float geoHiShift = uHi * 0.06;
+    float geoBassShift = uBass * 0.04;
+    // [v11] replaced uMMid*0.5 with stable t-based oscillation
+    float geoMidOsc = sin(t * 0.3 + uMid * 0.8) * 0.04;
+    vHue  = aLayer<0.5 ? 0.08+geoMidOsc - geoBassShift : (aLayer<1.5 ? 0.38+geoMidOsc + geoHiShift : 0.62+geoHiShift);
+    // [v11] megaPump shifts hue toward hot white during slam
+    vHue += megaC * 0.15;
+    harm  = 0.6*(1.0-snapStr) + kickGlow2*0.8 + 0.15;
+    // [v11] megaPump adds massive brightness surge
+    harm += megaC * 0.6;
+    alphaMult = 0.5 + (1.0-snapStr)*0.45 + uKick*0.20;  // [v11] kick alpha reduced from 0.35
+    // [v11] megaPump forces full opacity during slam
+    alphaMult = max(alphaMult, megaC * 0.9);
+    vDepth = pos.z + 1.5;
+
+  // ════════════════════════════════════════════════════════════
+  // ORGANIC — 菌丝网络 — frequency-decoupled v6
+  //   Bass → filament length, root thickness (structural growth)
+  //   Mid  → filament bending, global rotation (motion/flow)
+  //   Hi   → tip quiver, tip color shift, sparkle
+  // ════════════════════════════════════════════════════════════
+  } else if(sty>3.5&&sty<4.5){
+
+    float NFIL = 12.0;
+    float fID   = floor(s0 * NFIL);
+    float fFrac = fract(s0 * NFIL);   // 0=root, 1=tip
+
+    // ── FILAMENT BASE ANGLE — mid modulates slow angular drift ───
+    float baseAng = fID * (6.2832 / NFIL)
+                  + hash(fID * 3.7) * 1.2
+                  + uMMid * (0.06 + hash(fID*1.3)*0.08);  // mid drives angular drift
+
+    float elev = (hash(fID*5.1) - 0.5) * 2.2;
+
+    // ── FILAMENT LENGTH — BASS is primary driver (structural growth) ──
+    float restLen  = 0.55 + hash(fID*2.1)*0.55;
+    float bassLen  = restLen * (1.0 + uBass*0.40 + uKick*0.60*(0.5+fFrac));
+    // [v10] Pump: filaments contract on kick (tips pull inward), extend between beats
+    // fFrac-weighted: tips react more than roots (organic feel)
+    float fLen     = bassLen * (1.0 - uPump * 0.14 * (0.4 + fFrac * 0.6));
+
+    float fR = pow(fFrac, 0.7) * fLen;
+
+    // ── fBm BENDING — MID drives bending motion ──────────────────
+    float noiseT = fFrac * 3.5 + fID * 1.17;
+    float bend1  = fbm(vec3(noiseT, uMMid*0.12, fID*0.3)) * 2.0 - 1.0;   // mid drives bend
+    float bend2  = fbm(vec3(noiseT*1.7+2.3, uMMid*0.08, fID*0.5+1.1)) * 2.0 - 1.0;
+
+    float bendAmt = fFrac * fFrac * (1.8 + hash(fID*4.3)*1.0);
+    // MID: stronger bending response
+    bendAmt *= (1.0 + uMid * 0.6);
+    float filAng  = baseAng + bend1 * bendAmt * 2.0;
+    float filElev = elev    + bend2 * bendAmt * 0.8;
+
+    // ── FILAMENT SPINE ───────────────────────────────────────────
+    float cosE  = cos(filElev);
+    float spineX = cos(filAng) * cosE * fR;
+    float spineZ = sin(filAng) * cosE * fR;
+    float spineY = sin(filElev) * fR;
+
+    // ── RADIAL THICKNESS — BASS makes roots thicker ──────────────
+    float thickness = (0.028 + hash(fID*6.1)*0.035) * (1.0 - fFrac*0.60);
+    thickness *= (1.0 + uBass * 0.3);  // bass thickens roots
+    // [v10] Pump: roots swell on compression (denser core feel)
+    thickness *= (1.0 + uPump * 0.20 * (1.0 - fFrac));
+    float scatterAng = s1 * 6.2832 + uMHi * 2.0 + fID;
+    float scatterR   = abs(s2-0.5) * 2.0 * thickness;
+    spineX += cos(scatterAng) * scatterR;
+    spineZ += sin(scatterAng) * scatterR;
+
+    // ── BRANCHES ─────────────────────────────────────────────────
+    float branchFrac = step(s1, 0.22);
+    float branchStart = 0.62 + hash(fID*8.3)*0.20;
+    float bFrac  = fract(s2 * 2.0);
+    float bAng   = filAng + (hash(fID*5.7)-0.5)*2.0 + bend1*0.3;
+    float bLen   = fLen * (0.30 + hash(fID*3.3)*0.25);
+    float bR     = branchStart*fLen + pow(bFrac,0.8)*bLen;
+    float bX     = cos(bAng)*bR + cos(scatterAng)*scatterR*0.6;
+    float bY     = spineY * branchStart + (hash(fID*2.7)-0.5)*bR*0.15;
+    float bZ     = sin(bAng)*bR + sin(scatterAng)*scatterR*0.6;
+
+    float useB = branchFrac;
+    pos = vec3(
+      mix(spineX, bX, useB),
+      mix(spineY, bY, useB),
+      mix(spineZ, bZ, useB)
+    );
+
+    // ── TIP QUIVER — HI is primary driver (detail/shimmer) ───────
+    float tipAmt = fFrac * fFrac * uHi * 0.10;  // stronger hi response
+    pos.x += sin(uT*1.8 + fID*2.3 + s0*5.) * tipAmt;
+    pos.z += cos(uT*1.5 + fID*1.7 + s1*4.) * tipAmt;
+    // HI: tip sparkle/flicker
+    float tipFlicker = step(0.40, fract(s0*12.0 + fFrac*8.0 + t * uHiDense * 8.0));
+    float flickerMask = fFrac * fFrac * uHi;  // only affects tips, gated by hi
+
+    // ── SLOW GLOBAL ROTATION — MID drives rotation ───────────────
+    pos.xz = rot2(uMMid*0.0012) * pos.xz;  // mid only
+    pos.xy = rot2(uMMid*0.0006) * pos.xy;
+
+    pos *= 1.30;
+
+    // ── HUE — hi shifts tips colder, bass warms roots ────────────
+    float hueRoot = 0.08 - uBass * 0.04;   // bass deepens amber at roots
+    float hueMid  = 0.38;
+    float hueTip  = 0.62 + uHi * 0.08;     // hi pushes tips bluer
+    float hueT    = mix(fFrac, fFrac*0.5+0.5, useB);
+    if(hueT < 0.5) vHue = mix(hueRoot, hueMid, hueT*2.0);
+    else           vHue = mix(hueMid,  hueTip,  (hueT-0.5)*2.0);
+    vHue += (hash(fID*1.9)-0.5)*0.08;
+
+    // ── BRIGHTNESS — bass = root glow, hi = tip sparkle ──────────
+    float tipFade  = 0.3 + fFrac*0.5;
+    harm      = tipFade * (0.5 + uBass*0.35 + uMid*0.15) + uKick*fFrac*0.6;
+    alphaMult = tipFade * (0.7 + uBass*0.4);
+    // HI: tip flicker effect
+    alphaMult *= (1.0 - flickerMask * 0.35 * (1.0 - tipFlicker));
+
+    vDepth = pos.z + 1.5;
+
+  // ════════════════════════════════════════════════════════════
+  // ENTROPIC — frequency-decoupled v6
+  //   Bass → structural breathing, radial expansion, density
+  //   Mid  → rotation, twisting, lobe deformation
+  //   Hi   → color shift, shimmer, edge detail
+  // ════════════════════════════════════════════════════════════
+  } else {
+
+    float noiseFreq=0.6+mMid*2.2;
+    // [v10] lowMid adds pad/chord warmth, mid is now narrower (vocal/lead only)
+    float nm=(0.06+uMid*0.14+uLowMid*0.08+uBass*0.12)*(0.6+mFast*1.2);
+    pos+=nd*nm;
+
+    if(aLayer<0.5){
+      // BASS: structural breathing (scale pulsation)
+      float breathScale=0.4+mSlow*1.2;
+      pos*=breathScale;
+      float chaos2 = uChaosLevel - 1.0;
+      if(chaos2 > 0.0){
+        vec3 chaosDir2 = normalize(vec3(cos(s1*10.1+t*0.6), sin(s0*7.3-t*0.4), cos(s2*8.5+t*0.8)));
+        pos += chaosDir2 * chaos2 * (0.12 + hash(s1*7.3)*0.18);
+      }
+      // BASS: radial harmonic expansion (pure structure)
+      harm += sin(s0+t*0.9)*0.5+sin(s0*3.+t*1.8+s1)*0.25+sin(s0*5.+t*2.7)*0.12;
+      harm *= uBass*0.40+0.04;
+      pos+=normalize(pos+0.001)*harm;
+      pos+=normalize(pos+0.001)*uBass*(0.5+0.4*sin(s1+t*2.0))*breathScale;
+      // HI: micro-shimmer on inner layer particles
+      pos += vec3(sin(s0*16.+t*5.2), cos(s1*14.+t*4.8), sin(s2*18.+t*6.1)) * uHi * 0.04;
+    } else if(aLayer<1.5){
+      // MID: lobe rotation and twisting (melodic motion)
+      float lobeAngle=sin(t*0.13+s0*2.)*mMid*2.8;
+      pos.xz=rot2(lobeAngle)*pos.xz;
+      harm += sin(s0*2.+t*1.2)*0.5+sin(s0*4.+t*2.4-s1)*0.25+sin(s0*6.+t*3.6)*0.12;
+      harm *= uMid*0.35+0.03;
+      pos.yz=rot2((uMid*2.0*length(pos.xz)+t*0.2+harm)*0.4)*pos.yz;
+      pos+=normalize(pos+0.001)*(uMid*0.40+mFast*0.15);
+      // BASS: slight radial breathing on mid layer too
+      pos *= 1.0 + uBass * 0.08 * sin(t*0.7 + s0*2.0);
+    } else {
+      float w1=sin(pos.x*3.+pos.y*2.+t*0.4)*0.5+0.5;
+      float w2=sin(pos.y*3.-pos.z*2.+t*0.31)*0.5+0.5;
+      pos+=nd*(0.08+((w1*w2)*2.-0.5)*0.15*mMid);
+      // HI: primary driver for outer layer — shimmer and expansion
+      harm += sin(s0+t*2.2)*0.33+sin(s1*2.+t*4.4+s0)*0.22
+             +sin(s0*3.+s1*3.+t*6.6)*0.15+sin(s0*5.-s1*2.+t*9.)*0.08;
+      harm *= uHi*0.32+0.05;
+      pos+=nd*harm*0.9;
+      pos+=normalize(pos+0.001)*uHi*0.20;
+      // HI: flicker on outer layer (hi-hat sparkle)
+      float flickOuter = step(0.48, fract(s0*18.0 + t * uHiDense * 12.0));
+      alphaMult *= (0.6 + 0.4 * flickOuter);
+    }
+
+    // MID: global twist/rotation (pure mid, no energy blend)
+    float twistAmt=uMid*1.5*(0.3+mFast*1.4);
+    // [v13] Reduced hiSpin: uHiDense fluctuates too fast → rotation jerks
+    // Halved coefficients for smoother rotational response
+    float hiSpin2 = uHiDense * 0.7 + uDropAlert * 0.8;
+    pos.xz=rot2(twistAmt*0.28+t*0.18+hiSpin2)*pos.xz;
+    pos.xy=rot2(twistAmt*0.16-t*0.11-hiSpin2*0.5)*pos.xy;
+    // [v13] HI edge shimmer: reduced from 0.12 to 0.07, lower freq
+    pos+=normalize(pos+0.001)*sin(s0*13.+t*3.5)*uHi*0.07;
+
+    // BASS: kick shockwave (structural radial pulse)
+    if(uKick>0.01){
+      float d=length(aBase);
+      float front=(1.0-uKick)*2.2;
+      float w=exp(-abs(d-front)*(0.5+uKick*0.6)*5.)*uKick;
+      pos+=normalize(pos+0.001)*w*1.1;
+      kickGlow=w*0.5;
+    }
+    if(uSnare>0.01){
+      // [v13] Softer snare response: lower oscillation freq, reduced amp
+      // Was t*22/t*19 — too jittery. Now t*8/t*6 for a smoother push.
+      float snrStr = uSnare * uSnare;  // squared for softer onset
+      pos.y+=sin(s1*18.+t*8.)*snrStr*0.06;
+      pos.x+=cos(s0*15.+t*6.)*snrStr*0.04;
+    }
+
+    // MID: continuous slow rotation
+    float rs =aLayer<0.5?0.04:(aLayer<1.5?0.07:0.03);
+    float rs2=aLayer<0.5?0.025:(aLayer<1.5?0.045:0.02);
+    pos.xz=rot2(t*rs*(1.0+mMid*0.5))*pos.xz;
+    pos.xy=rot2(t*rs2*(1.0+mSlow2*0.4))*pos.xy;
+    pos.y*=0.62;
+
+    // [v10] Pump: attractor cloud compresses on kick, breathes out between beats
+    // Layer-weighted: inner layers compress more (dense core feel)
+    float entPumpStr = uPump * (aLayer < 0.5 ? 0.16 : (aLayer < 1.5 ? 0.12 : 0.06));
+    pos *= (1.0 - entPumpStr);
+
+    // HI: color temperature shift — hi pushes hue cooler (toward teal/blue)
+    float entHiShift = uHi * 0.08;
+    float entBassShift = uBass * 0.05;
+    vHue=aLayer<0.5 ? 0.0+pos.y*0.06 - entBassShift : (aLayer<1.5 ? 0.33+pos.x*0.05 + entHiShift*0.5 : 0.67+pos.z*0.04 + entHiShift);
+    vDepth = pos.z + 1.5;
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // [v10] GLOBAL PUMP ENVELOPE — sidechain breathing
+  //
+  // uPump = 0 means relaxed (between beats), higher = compressed (kick moment)
+  // Effect: uniform scale compression toward center + slight brightness duck
+  //
+  // This replaces scattered per-style beat-sync attempts with ONE coherent
+  // envelope that the whole visual field breathes with.
+  //
+  // The beauty: at low energy (quiet passages) uPump ≈ 0 → no visible effect.
+  // During drops/climax uPump pulses 0→0.3→0 each beat → whole field pumps.
+  // ═══════════════════════════════════════════════════════════════
+  float pumpScale = 1.0 - uPump * 0.12;   // compress up to 12% toward center
+  pos *= pumpScale;
+
+  // ── Perspective projection ───────────────────────────────────
+  // Cosmos needs wider FOV to show the full galactic span
+  float fillY = max(1.0, uAspect * 0.58);
+  pos.y *= fillY;
+  
+  // Cosmos: reduce overall scale to make galaxy fill the screen
+  float globalScale = (sty>0.5&&sty<1.5) ? 0.30 : 0.42;
+  pos *= globalScale;
+
+  // ── [v12] Camera transform — song structure drives perspective ──
+  // Apply camera rotation (z-axis) before projection
+  if(abs(uCamRotZ) > 0.001){
+    pos.xy = rot2(uCamRotZ) * pos.xy;
+  }
+  // Camera zoom: scale position toward center (zooming into the cloud)
+  pos.xy *= uCamZoom;
+  // Camera offset: shift the view center (drifting through the field)
+  pos.x -= uCamOffX * uCamZoom;
+  pos.y -= uCamOffY * uCamZoom;
+
+  // ── Center overexposure prevention ─────────────────────────
+  float z=pos.z+1.5;
+  float recZ=1.0/max(z,0.05);
+  
+  float depthDim = clamp(z * 0.55, 0.25, 1.0);
+  
+  gl_Position=vec4(pos.x*recZ*1.35, pos.y*recZ*1.35/uAspect, pos.z/5., 1.);
+
+  // [v12] When zoomed in, increase point size to show particle detail
+  float zoomSizeMul = 1.0 + (uCamZoom - 1.0) * 0.25;
+
+  // Point size: SUB-BASS controls base mass, kick adds transient burst
+  // [v9] Sub-bass gives deep structural weight, presence adds sparkle at tips
+  float szBase  = 1.2 + uSub * 1.0 + uBass * 0.5;
+  float szEnergy= uEnergy*1.2 + kickGlow*2.5 + uDropAlert*1.2;
+  // [v9] Spectral flux adds size burst on any transient
+  szEnergy += uSpectralFlux * 1.8;
+  // [v9] Burst radius = momentary size surge (proportional to burst scale)
+  szEnergy += uBurstRadius * 0.8;
+
+  float psMax, psMult;
+  if(sty>0.5&&sty<1.5){
+    psMax  = 7.0;
+    psMult = 1.05;
+  } else if(sty>3.5&&sty<4.5){
+    psMax  = 5.0;
+    psMult = 0.95;
+  } else {
+    psMax  = 8.0;
+    psMult = 1.05;
+  }
+  // Drop: momentary size surge
+  psMax *= 1.0 + uDropAlert * 0.5 + uBurstRadius * 0.3;
+  // [v10] Pump compresses point size slightly (denser on kick, opens between)
+  float pumpSzMod = 1.0 - uPump * 0.08;
+  // [v11] megaPump: points swell during slam for density impact
+  float megaSzMod = 1.0 + uMegaPump * uMegaPump * 0.4;
+  gl_PointSize=clamp((szBase+szEnergy)*recZ*psMult*pumpSzMod*megaSzMod*zoomSizeMul, 0.3, psMax * zoomSizeMul);
+
+  // Apply depth dimming to brightness — prevents center blowout
+  // [v9] Sustain level adds gentle background brightness during sustained passages
+  float rawBright = abs(harm)*2.5+uEnergy*0.30+kickGlow*0.7+0.08 + uBurstFlash*0.55
+                  + uSpectralFlux * 0.25 + uSustainLevel * 0.08;
+  // [v10] Pump dims brightness on compression, brightens on release
+  rawBright *= (1.0 - uPump * 0.15);
+  // [v11] megaPump: brightness surge during slam
+  rawBright += uMegaPump * uMegaPump * 0.35;
+
+  // [v13] Entropic: lift brightness floor so particles are visible when zoomed in
+  // Higher base, higher ceiling, softer depth dimming — without blowout
+  float brightFloor = 0.06;
+  float brightCeil  = 1.15;
+  float depthDimFinal = depthDim;
+  if(sty < 0.5){
+    rawBright += 0.10;           // base luminance lift
+    brightFloor = 0.14;          // higher floor — no near-invisible particles
+    brightCeil  = 1.35;          // allow brighter peaks
+    depthDimFinal = mix(depthDim, 1.0, 0.35);  // soften depth dimming by 35%
+  }
+  vBright=clamp(rawBright, brightFloor, brightCeil) * alphaMult * depthDimFinal;
+  vAlphaMult=alphaMult;
+  vFlash=uBurstFlash;
+  vStyle=uStyle;
+  vHiEnergy=uHi;
+  vBassWeight=uBassRatio;
+}
+`;
+
+const FS_PART=`
+precision mediump float;
+varying float vBright;
+varying float vHue;
+varying float vStyle;
+varying float vAlphaMult;
+varying float vDepth;
+varying float vFlash;
+varying float vHiEnergy;
+varying float vBassWeight;
+
+void main(){
+  vec2 uv=gl_PointCoord-0.5;
+  float d=length(uv);
+  if(d>0.5) discard;
+
+  float sty=vStyle;
+
+  // Cosmos: hi energy controls halo spread (hi active = diffuse glow, quiet = sharp points)
+  // Other styles: unchanged
+  float coreSharp = (sty>0.5&&sty<1.5) ? 28.0 : 20.0;
+  float haloSharp = (sty>0.5&&sty<1.5) ? (3.2 - vHiEnergy * 1.8) : 3.5;
+  haloSharp = max(haloSharp, 1.2);
+  float core=exp(-d*d*coreSharp);
+  float halo=exp(-d*d*haloSharp)*0.28;
+  
+  // Softer core contribution to prevent center overexposure
+  // core*0.65 instead of core*0.85 — reduces peak per-particle brightness
+  float alpha=(core*0.65+halo)*vBright;
+  
+  // Hard cap alpha — prevents dense particle overlap from blowing out to white
+  alpha = min(alpha, 0.58);
+
+  float h=fract(vHue);
+  vec3 col;
+
+  if(sty>0.5&&sty<1.5){
+    // ── COSMOS v10 COLOR — frequency-driven galactic palette ────
+    // Hi energy shifts entire palette toward cooler blue-violet
+    // Bass energy warms toward gold-white
+    // Fragment receives vHue already shifted by vertex shader
+
+    // Define color anchors
+    vec3 coreBlueWhite = vec3(0.65, 0.80, 1.35);
+    vec3 coreCyan      = vec3(0.35, 0.68, 1.20);
+    
+    vec3 midViolet     = vec3(1.05, 0.42, 1.25);
+    vec3 midMagenta    = vec3(1.20, 0.30, 0.95);
+    
+    vec3 rimGoldRose   = vec3(1.30, 1.05, 0.95);
+    vec3 rimDeepPink   = vec3(1.20, 0.95, 0.90);
+    
+    float hh = fract(h);
+    
+    // Core zone: h ∈ [0.50, 0.65]
+    if(hh >= 0.50 && hh < 0.65){
+      float t = (hh - 0.50) / 0.15;
+      col = mix(coreCyan, coreBlueWhite, t);
+      // Bass: warm core tint (reduced from 0.25 to 0.15 to prevent blowout)
+      col = mix(col, vec3(1.3, 1.2, 1.0), core * 0.15 * (1.0 + vBassWeight * 0.3));
+      col.b += vHiEnergy * 0.12 * core;
+    }
+    // Mid zone: h ∈ [0.65, 0.88]
+    else if(hh >= 0.65 && hh < 0.88){
+      float t = (hh - 0.65) / 0.23;
+      col = mix(midViolet, midMagenta, t);
+      col = mix(col, vec3(1.1, 0.95, 1.1), core * 0.12);
+      col.b += vHiEnergy * 0.10;
+    }
+    // Rim zone: h ∈ [0.88, 1.00]
+    else {
+      float t;
+      if(hh < 0.12) t = hh / 0.12;
+      else t = (hh - 0.88) / 0.12;
+      col = mix(rimGoldRose, rimDeepPink, t);
+      col.r += vBassWeight * 0.06;
+      col = mix(col, vec3(1.25, 1.15, 1.0), core * 0.08);
+    }
+    
+    // Halo glow: hi energy makes halos more prominent (diffuse glow)
+    vec3 haloTint = vec3(0.65 + vHiEnergy * 0.20, 0.45, 1.00 + vHiEnergy * 0.15);
+    col += haloTint * halo * (0.35 + vHiEnergy * 0.30) * (1.0 - core);
+    
+    // Burst flash: bass-weighted = gold-white, hi-weighted = blue-white
+    vec3 burstColor = mix(vec3(1.5, 1.3, 0.9), vec3(0.9, 1.1, 1.6), vHiEnergy);
+    col = mix(col, burstColor, vFlash * vFlash * 0.65);
+    
+    gl_FragColor = vec4(col, alpha * 0.80);
+
+  } else if(sty>1.5&&sty<2.5){
+    // ── SACRA — hi warms toward crimson, bass deepens gold ──
+    vec3 white  = vec3(1.00,0.98,0.90);
+    vec3 gold2  = vec3(0.98,0.78,0.15);
+    vec3 crimson= vec3(0.72,0.06,0.10);
+    vec3 ivory  = vec3(0.96,0.90,0.72);
+    if(h<0.25)      col=mix(white,gold2,h/0.25);
+    else if(h<0.55) col=mix(gold2,crimson,(h-0.25)/0.30);
+    else if(h<0.80) col=mix(crimson,ivory,(h-0.55)/0.25);
+    else            col=ivory;
+    col=mix(col,vec3(1.0,0.97,0.80),core*0.35);  // reduced from 0.55
+    // Hi: push halo toward warm crimson glow
+    col+=vec3(0.12 + vHiEnergy*0.08, 0.0, vHiEnergy*0.03)*halo*(1.0-core);
+    // Bass: deepen gold saturation
+    col.r += vBassWeight * 0.05 * core;
+    col = mix(col, vec3(1.0), vFlash * vFlash * 0.6);
+    gl_FragColor=vec4(col, alpha*0.42);
+
+  } else if(sty>2.5&&sty<3.5){
+    // ── GEOMETRY — hi brightens cyan edges, bass deepens blue ──
+    vec3 cyan2  = vec3(0.10,0.88,0.95);
+    vec3 white2 = vec3(0.94,0.97,1.00);
+    vec3 dblue  = vec3(0.05,0.25,0.75);
+    if(h<0.35)      col=mix(cyan2,white2,h/0.35);
+    else             col=mix(white2,dblue,(h-0.35)/0.65);
+    col=mix(col,vec3(1.0,1.0,1.0),core*0.45);  // reduced from 0.65
+    // Hi: brighter cyan halo shimmer
+    col+=cyan2*(1.0 + vHiEnergy*0.5)*halo*0.4;
+    // Bass: deeper blue push on core
+    col.b += vBassWeight * 0.06 * core;
+    col = mix(col, vec3(1.0), vFlash * vFlash * 0.6);
+    gl_FragColor=vec4(col, alpha*0.42);
+
+  } else if(sty>3.5&&sty<4.5){
+    // ── ORGANIC — hi cools tips toward teal-blue, bass warms roots ──
+    vec3 dgreen = vec3(0.05,0.35,0.12);
+    vec3 amber2 = vec3(0.80,0.52,0.05);
+    vec3 teal2  = vec3(0.15,0.65,0.55);
+    vec3 moss   = vec3(0.28,0.50,0.18);
+    float hq=fract(h*4.0);
+    float seg=floor(h*4.0);
+    vec3 bioA=seg<0.5?dgreen:(seg<1.5?amber2:(seg<2.5?teal2:moss));
+    vec3 bioB=seg<0.5?amber2:(seg<1.5?teal2:(seg<2.5?moss:dgreen));
+    col=mix(bioA,bioB,hq);
+    // Hi: push toward cooler teal at tips
+    col=mix(col,vec3(0.60, 0.95, 0.70 + vHiEnergy*0.15),core*0.20);  // reduced from 0.32
+    // Bass: warmer amber glow at roots
+    col.r += vBassWeight * 0.04 * (1.0-core);
+    col+=teal2*(1.0 + vHiEnergy*0.35)*halo*0.45;
+    col = mix(col, vec3(1.0), vFlash * vFlash * 0.6);
+    gl_FragColor=vec4(col, alpha*0.42);
+
+  } else {
+    // ── ENTROPIC — hi pushes toward teal, bass deepens copper/gold ──
+    // [v13] Brighter particles: lifted core warmth + alpha, halo glow
+    //       but still capped to avoid blowout in dense overlap zones
+    vec3 ogold  =vec3(0.88,0.68,0.22);
+    vec3 copper =vec3(0.72,0.42,0.28);
+    vec3 teal   =vec3(0.32,0.58,0.55);
+    if(h<0.165)      col=ogold;
+    else if(h<0.33)  col=mix(ogold,copper,(h-0.165)/0.165);
+    else if(h<0.495) col=copper;
+    else if(h<0.67)  col=mix(copper,teal,(h-0.495)/0.175);
+    else             col=teal;
+    // Core warmth: lifted from 0.18 to 0.26
+    col=mix(col,vec3(1.0,0.92,0.7),core*0.26);
+    // Hi: halo glow lifted
+    col += teal * vHiEnergy * halo * 0.35;
+    // Bass: deepen gold/copper warmth
+    col.r += vBassWeight * 0.05 * core;
+    // Ambient warmth boost: sparse particles get a gentle luminance floor
+    col += vec3(0.06, 0.04, 0.015);
+    col = mix(col, vec3(1.0), vFlash * vFlash * 0.6);
+    gl_FragColor=vec4(col, alpha*0.58);
+  }
+}
+`;
+
+const VS_QUAD=`
+attribute vec2 aPos;
+varying vec2 vUV;
+void main(){ vUV=aPos*.5+.5; gl_Position=vec4(aPos,0.,1.); }
+`;
+
+const FS_FADE=`
+precision mediump float;
+uniform float uAlpha;
+uniform vec3  uBgCol;
+void main(){ gl_FragColor=vec4(uBgCol, uAlpha); }
+`;
+
+// ── Nebula (Cosmos only) ──────────────────────────────────────
+// Deeper, more saturated volumetric nebula with dark lanes
+const FS_NEBULA=`
+precision mediump float;
+uniform float uT, uMid, uEnergy, uBass;
+varying vec2 vUV;
+
+float hash(float n){ return fract(sin(n)*43758.5453); }
+float n3(vec3 p){
+  vec3 i=floor(p); vec3 f=fract(p); f=f*f*(3.-2.*f);
+  float n=i.x+i.y*57.+i.z*113.;
+  return mix(mix(mix(hash(n),hash(n+1.),f.x),mix(hash(n+57.),hash(n+58.),f.x),f.y),
+             mix(mix(hash(n+113.),hash(n+114.),f.x),mix(hash(n+170.),hash(n+171.),f.x),f.y),f.z);
+}
+float fbm(vec3 p){
+  return n3(p)*0.50+n3(p*2.1+vec3(3.7,1.5,2.9))*0.25
+        +n3(p*4.4-vec3(1.3,2.7,0.5))*0.125+n3(p*8.8+vec3(2.1,4.3,1.7))*0.0625;
+}
+
+void main(){
+  vec2 uv = vUV - 0.5;
+
+  float drift = uT*0.012;
+  // Bass warps nebula more aggressively = bass hits feel like gravitational shockwaves
+  float warpStr = 0.25 + uBass * 0.55;
+  float warpX = fbm(vec3(uv*1.4+0.5, drift*0.35))*warpStr;
+  float warpY = fbm(vec3(uv*1.4+2.7, drift*0.30))*warpStr;
+  vec2 warpedUV = uv + vec2(warpX, warpY);
+
+  // Three fBm layers: large structure + medium detail + fine wisps
+  float nebA = fbm(vec3(warpedUV*1.5+0.5,  drift));
+  float nebB = fbm(vec3(warpedUV*3.2+3.14, drift*0.65+1.5));
+  float nebC = fbm(vec3(warpedUV*7.0+1.77, drift*1.1+3.2));
+  float neb  = nebA*0.55 + nebB*0.30 + nebC*0.15;
+
+  // Dark lane carving: subtract a second fBm to create void channels
+  float laneNoise = fbm(vec3(warpedUV*2.2+5.5, drift*0.5));
+  float lane = smoothstep(0.35, 0.55, laneNoise);  // sharp dark lanes
+  neb *= lane;
+
+  float midBright = 0.08 + uMid*0.60 + uEnergy*0.25;
+
+  // Nebula palette: deeper, more saturated than v3
+  vec3 colVoid   = vec3(0.00, 0.00, 0.01);   // near-black void
+  vec3 colIndigo = vec3(0.04, 0.02, 0.18);   // deep indigo
+  vec3 colViolet = vec3(0.15, 0.04, 0.32);   // rich violet
+  vec3 colCrimson= vec3(0.28, 0.02, 0.14);   // deep crimson/magenta
+  vec3 colBlue   = vec3(0.06, 0.12, 0.28);   // dark cerulean (ionized O)
+  vec3 nebCol;
+  if(neb < 0.15)       nebCol = mix(colVoid, colIndigo, neb/0.15);
+  else if(neb < 0.40)  nebCol = mix(colIndigo, colViolet, (neb-0.15)/0.25);
+  else if(neb < 0.65)  nebCol = mix(colViolet, colCrimson, (neb-0.40)/0.25);
+  else if(neb < 0.82)  nebCol = mix(colCrimson, colBlue, (neb-0.65)/0.17);
+  else                 nebCol = colBlue;
+
+  // Mid-freq breathing: nebula pulses with chords/pads
+  float alpha = neb*neb*neb * midBright * 0.80;
+
+  gl_FragColor = vec4(nebCol, alpha);
+}
+`;
+
+const FS_THRESH=`
+precision mediump float;
+uniform sampler2D uTex;
+uniform float uThr;
+varying vec2 vUV;
+void main(){
+  vec4 c=texture2D(uTex,vUV);
+  float lum=dot(c.rgb,vec3(0.299,0.587,0.114));
+  gl_FragColor=lum>uThr?c*1.4:vec4(0.);
+}
+`;
+
+const FS_BLUR=`
+precision mediump float;
+uniform sampler2D uTex;
+uniform vec2 uStep;
+varying vec2 vUV;
+void main(){
+  vec4 c=vec4(0.);
+  c+=texture2D(uTex,vUV-uStep*4.)*0.0162;
+  c+=texture2D(uTex,vUV-uStep*3.)*0.054;
+  c+=texture2D(uTex,vUV-uStep*2.)*0.1216;
+  c+=texture2D(uTex,vUV-uStep*1.)*0.1945;
+  c+=texture2D(uTex,vUV         )*0.227;
+  c+=texture2D(uTex,vUV+uStep*1.)*0.1945;
+  c+=texture2D(uTex,vUV+uStep*2.)*0.1216;
+  c+=texture2D(uTex,vUV+uStep*3.)*0.054;
+  c+=texture2D(uTex,vUV+uStep*4.)*0.0162;
+  gl_FragColor=c;
+}
+`;
+
+const FS_COMP=`
+precision mediump float;
+uniform sampler2D uScene, uBloom;
+uniform float uBStr, uBassScale;
+uniform vec3 uBloomTint, uBgTint;
+uniform float uStyle;
+uniform float uBurstFlash;
+uniform float uRelIntensity;
+uniform float uCameraShake;  // [v9]
+uniform float uTime;         // [v9]
+uniform float uCamZoomComp;  // [v12] camera zoom for vignette adaptation
+varying vec2 vUV;
+void main(){
+  // [v9] Camera shake: offset UV by high-frequency noise scaled by shake intensity
+  vec2 uv = vUV;
+  if(uCameraShake > 0.001){
+    float shakeX = sin(uTime * 47.3 + vUV.y * 13.0) * uCameraShake * 0.012;
+    float shakeY = cos(uTime * 53.7 + vUV.x * 17.0) * uCameraShake * 0.010;
+    uv += vec2(shakeX, shakeY);
+  }
+  
+  vec3 col=texture2D(uScene,uv).rgb;
+  vec3 bloom=texture2D(uBloom,uv).rgb;
+  bloom*=uBloomTint;
+  col+=bloom*uBStr;
+
+  float lum=dot(col,vec3(0.299,0.587,0.114));
+  col=mix(uBgTint, col, clamp(lum*3.5,0.,1.));
+
+  // Cosmos: extra contrast crush
+  if(uStyle>0.5&&uStyle<1.5){
+    col = col * col * (3.0 - 2.0*col);
+    col *= 1.25;
+  }
+
+  vec2 q=(uv-0.5)*(1.0/(uBassScale));
+  // [v9] Vignette opens slightly during bursts (expand visual space)
+  // [v12] Vignette softens when zoomed in — interior view needs wider visible area
+  float zoomVigReduce = (uCamZoomComp - 1.0) * 0.35;
+  float vigStr = 2.1 - uCameraShake * 0.6 - zoomVigReduce;
+  float vig=1.-dot(q,q)*vigStr;
+  col*=clamp(vig,0.,1.);
+
+  // Reinhard tone mapping
+  col=col/(col+0.95);
+  col.r+=0.012*(1.-col.r)*0.5;
+  col=pow(col,vec3(0.92));
+
+  gl_FragColor=vec4(col,1.);
+}
+`;
+
+// ================================================================
+// BOOT
+// ================================================================
+let pProg,fadeProg,thrProg,blurProg,cmpProg;
+let quadVbo,baseBuf,seedBuf,layerBuf;
+let sceneFBO,thrFBO,blurA,blurB;
+
+function rebuildFBOs(){
+  const hw=Math.ceil(W/2), hh=Math.ceil(H/2);
+  sceneFBO  = mkFBO(W,H);
+  thrFBO    = mkFBO(hw,hh);
+  blurA     = mkFBO(hw,hh);
+  blurB     = mkFBO(hw,hh);
+  nebulaFBO = mkFBO(Math.ceil(W/3), Math.ceil(H/3));
+  gl.bindFramebuffer(gl.FRAMEBUFFER,sceneFBO.fb);
+  gl.clearColor(0,0,0,1); gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+}
+
+function resize(){
+  const dpr=Math.min(window.devicePixelRatio||1, 2);
+  W=cv.width=Math.floor(window.innerWidth*dpr);
+  H=cv.height=Math.floor(window.innerHeight*dpr);
+  cv.style.width=window.innerWidth+'px';
+  cv.style.height=window.innerHeight+'px';
+  gl.viewport(0,0,W,H);
+  if(pProg) rebuildFBOs();
+}
+window.addEventListener('resize',resize);
+
+let nebulaProg, nebulaFBO;
+let bgScaleSmooth = 1.0;
+
+function boot(){
+  pProg      = mkProg(VS_PART, FS_PART);
+  fadeProg   = mkProg(VS_QUAD, FS_FADE);
+  thrProg    = mkProg(VS_QUAD, FS_THRESH);
+  blurProg   = mkProg(VS_QUAD, FS_BLUR);
+  cmpProg    = mkProg(VS_QUAD, FS_COMP);
+  nebulaProg = mkProg(VS_QUAD, FS_NEBULA);
+
+  quadVbo=mkVbo(new Float32Array([-1,-1,1,-1,-1,1,1,1]));
+
+  const base=buildBase();
+  baseBuf =mkVbo(base.pos);
+  seedBuf =mkVbo(base.seed);
+  layerBuf=mkVbo(base.layer);
+
+  resize();
+  requestAnimationFrame(render);
+}
+
+// ================================================================
+// RENDER LOOP
+// ================================================================
+let T=0,LT=0;
+
+// ── Spectrograph cache ──
+let _sgCanvas, _sgCtx;
+function render(ts){
+  requestAnimationFrame(render);
+  const dt=Math.min((ts-LT)/1000,0.05); LT=ts; T+=dt;
+  tick_audio(dt);
+  updateStructureAndCamera();  // [v12] song structure → camera
+  MOUSE.x += (MOUSE.tx - MOUSE.x) * 0.06;
+  MOUSE.y += (MOUSE.ty - MOUSE.y) * 0.06;
+
+  // ── 3D Spectrograph ──────────────────────────────────────
+  {
+    if(!_sgCanvas){ _sgCanvas = document.getElementById('spectrograph-canvas'); _sgCtx = _sgCanvas.getContext('2d'); }
+    const W = _sgCanvas.width, H = _sgCanvas.height;
+    _sgCtx.clearRect(0,0,W,H);
+
+    if(analyser && fdata){
+      const useBins = Math.min(64, analyser.frequencyBinCount);
+
+      // ── Per-theme color palettes: [bass_rgb, mid_rgb, hi_rgb] (desaturated) ──
+      const SG_PALETTES = [
+        // 0 Entropic — muted gold → warm tan → pale silver
+        { bass:[180,155,90],  mid:[200,170,120], hi:[165,185,190] },
+        // 1 Cosmos — dusted blue → muted violet → soft cyan
+        { bass:[90,105,180],  mid:[140,110,185], hi:[110,165,210] },
+        // 2 Sacra — muted rust → warm clay → dusty rose
+        { bass:[185,95,75],   mid:[180,115,90],  hi:[195,155,130] },
+        // 3 Geometry — soft teal → muted aqua → pale ice
+        { bass:[85,150,160],  mid:[110,175,190], hi:[155,195,210] },
+        // 4 Organic — sage → muted lime → pale mint
+        { bass:[90,148,90],   mid:[130,175,105], hi:[155,195,150] },
+      ];
+      const pal = SG_PALETTES[currentStyle] || SG_PALETTES[0];
+
+      // 3D projection params
+      const floorY    = H * 0.92;
+      const barSpacing = (W * 0.85) / useBins;
+      const barW       = barSpacing * 0.72;
+      const maxBarH    = H * 0.75;
+      const depthShiftX = 0.18;
+      const depthShiftY = -0.32;
+      const depthScale  = 0.55;
+      const startX      = (W - useBins * barSpacing) * 0.5;
+
+      // Draw back-to-front (high freq first so bass bars render on top / in front)
+      for(let i = useBins - 1; i >= 0; i--){
+        const v = fdata[i] / 255;
+        const barH = v * maxBarH;
+        if(barH < 0.5) continue;
+
+        const bx = startX + i * barSpacing;
+        const depthT = i / useBins;
+        const dx = depthT * useBins * depthShiftX;
+        const dy = depthT * useBins * depthShiftY;
+        const scale = 1.0 - depthT * (1.0 - depthScale);
+
+        const x = bx + dx;
+        const baseY = floorY + dy;
+        const w = barW * scale;
+        const h = barH * scale;
+
+        // Interpolate across bass → mid → hi using theme palette
+        const t = i / useBins;
+        let r, g, b;
+        if(t < 0.5){
+          const lt = t / 0.5;
+          r = pal.bass[0] + (pal.mid[0] - pal.bass[0]) * lt;
+          g = pal.bass[1] + (pal.mid[1] - pal.bass[1]) * lt;
+          b = pal.bass[2] + (pal.mid[2] - pal.bass[2]) * lt;
+        } else {
+          const lt = (t - 0.5) / 0.5;
+          r = pal.mid[0] + (pal.hi[0] - pal.mid[0]) * lt;
+          g = pal.mid[1] + (pal.hi[1] - pal.mid[1]) * lt;
+          b = pal.mid[2] + (pal.hi[2] - pal.mid[2]) * lt;
+        }
+
+        // Depth fade — farther bars are dimmer
+        const depthFade = 0.4 + 0.6 * (1.0 - depthT);
+        const aFace = (0.22 + v * 0.48) * depthFade;
+        const aTop  = (0.12 + v * 0.28) * depthFade;
+        const aSide = (0.15 + v * 0.35) * depthFade;
+
+        const topSkewX = w * 0.35;
+        const topSkewY = h * 0.08 + 3;
+
+        // ── Front face ──
+        _sgCtx.fillStyle = `rgba(${r|0},${g|0},${b|0},${aFace.toFixed(2)})`;
+        _sgCtx.fillRect(x, baseY - h, w, h);
+
+        // ── Top face (brighter) ──
+        _sgCtx.fillStyle = `rgba(${Math.min(255,r+30)|0},${Math.min(255,g+25)|0},${Math.min(255,b+15)|0},${aTop.toFixed(2)})`;
+        _sgCtx.beginPath();
+        _sgCtx.moveTo(x, baseY - h);
+        _sgCtx.lineTo(x + topSkewX, baseY - h - topSkewY);
+        _sgCtx.lineTo(x + w + topSkewX, baseY - h - topSkewY);
+        _sgCtx.lineTo(x + w, baseY - h);
+        _sgCtx.closePath();
+        _sgCtx.fill();
+
+        // ── Right side face (darker) ──
+        _sgCtx.fillStyle = `rgba(${Math.max(0,r-40)|0},${Math.max(0,g-30)|0},${Math.max(0,b-10)|0},${aSide.toFixed(2)})`;
+        _sgCtx.beginPath();
+        _sgCtx.moveTo(x + w, baseY - h);
+        _sgCtx.lineTo(x + w + topSkewX, baseY - h - topSkewY);
+        _sgCtx.lineTo(x + w + topSkewX, baseY - topSkewY);
+        _sgCtx.lineTo(x + w, baseY);
+        _sgCtx.closePath();
+        _sgCtx.fill();
+
+        // ── Edge highlight ──
+        _sgCtx.strokeStyle = `rgba(${Math.min(255,r+60)|0},${Math.min(255,g+50)|0},${Math.min(255,b+30)|0},${(aFace*0.3).toFixed(2)})`;
+        _sgCtx.lineWidth = 0.5;
+        _sgCtx.strokeRect(x, baseY - h, w, h);
+      }
+
+      // ── Floor reflection (subtle) ──
+      _sgCtx.save();
+      _sgCtx.globalAlpha = 0.06;
+      _sgCtx.scale(1, -0.25);
+      _sgCtx.drawImage(_sgCanvas, 0, -floorY * 4 - H * 0.3);
+      _sgCtx.restore();
+    }
+  }
+  document.getElementById('hk').style.opacity=AP.kick>0.3?'0.7':'0';
+
+  // [v12] Structure phase indicator
+  {
+    const phEl = document.getElementById('struct-phase');
+    const phaseLabels = {quiet:'◇ QUIET', building:'△ BUILD', climax:'◆ CLIMAX', breakdown:'▽ BREAK'};
+    const phaseColors = {quiet:'rgba(255,255,255,0.3)', building:'rgba(255,255,255,0.45)', climax:'rgba(255,255,255,0.6)', breakdown:'rgba(255,255,255,0.35)'};
+    phEl.textContent = phaseLabels[STRUCT.phase] || '';
+    phEl.style.color = phaseColors[STRUCT.phase] || '';
+    phEl.style.opacity = STRUCT.phase === 'climax' ? '0.6' : '0.3';
+  }
+
+  if(songDuration>0 && isPlaying){
+    const ct=Math.min(getCurrentTime(),songDuration);
+    const pct=(ct/songDuration)*100;
+    progFill.style.width=pct+'%';
+    progThumb.style.left=pct+'%';
+    progCur.textContent=fmtTime(ct);
+  }
+
+  const hw=Math.ceil(W/2), hh2=Math.ceil(H/2);
+
+  const BG_TINTS = [
+    [0.005, 0.005, 0.012],  // 0 Entropic
+    [0.004, 0.003, 0.025],  // 1 Cosmos: deep violet-black space
+    [0.018, 0.004, 0.005],  // 2 Sacra
+    [0.003, 0.010, 0.018],  // 3 Geometry
+    [0.004, 0.014, 0.006],  // 4 Organic
+  ];
+  const bgT = BG_TINTS[currentStyle] || BG_TINTS[0];
+
+  const kickScale = currentStyle===1
+    ? 0.07 + AP.relativeIntensity * 0.08
+    : 0.04 + AP.relativeIntensity * 0.06;
+  const bassScale = currentStyle===1 ? 0.018 : 0.012;
+  // [v10] pump adds to vignette zoom — compressed=tighter framing, released=opens up
+  const pumpZoom = AP.pump * 0.015;
+  // [v11] megaPump: massive zoom punch on drops
+  const megaZoom = AP.megaPump * AP.megaPump * 0.06;
+  bgScaleSmooth += ((1.0 + AP.kick*kickScale + AP.rb*bassScale + pumpZoom + megaZoom) - bgScaleSmooth) * 0.10;
+
+  // ── P1: trail fade ────────────────────────────────────────
+  gl.bindFramebuffer(gl.FRAMEBUFFER,sceneFBO.fb);
+  gl.viewport(0,0,W,H);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
+  gl.useProgram(fadeProg);
+
+  let fadeAlpha;
+  if(currentStyle===1){
+    fadeAlpha = 0.03 + AP.sh*0.10 + AP.kick*0.20 - AP.sb*0.02;
+    fadeAlpha = Math.max(0.02, Math.min(fadeAlpha, 0.22 + AP.relativeIntensity * 0.28));
+  } else {
+    fadeAlpha = 0.03 + AP.sh*0.08 + AP.kick*0.15 + AP.sm*0.03 - AP.sb*0.015;
+    fadeAlpha = Math.max(0.02, Math.min(fadeAlpha, 0.18 + AP.relativeIntensity * 0.25));
+  }
+  // [v9] Trail persistence: reduce fade during bursts (trails linger longer)
+  fadeAlpha *= (1.0 - AP.trailPersist * 0.7);
+  // [v10] Pump: compressed moments = slightly more trail persistence (denser feel)
+  fadeAlpha *= (1.0 - AP.pump * 0.25);
+  // [v11] megaPump: heavy trail persistence during slam (dense, impactful)
+  fadeAlpha *= (1.0 - AP.megaPump * 0.55);
+  fadeAlpha = Math.max(0.01, fadeAlpha);
+  u1(fadeProg,'uAlpha', fadeAlpha);
+  u3(fadeProg,'uBgCol', bgT[0], bgT[1], bgT[2]);
+  drawQuad(fadeProg);
+
+  // ── P1b: Nebula pass (disabled — causes bloom artifacts) ──
+  if(false && currentStyle===1 && nebulaProg && nebulaFBO){
+    gl.bindFramebuffer(gl.FRAMEBUFFER,nebulaFBO.fb);
+    gl.viewport(0,0,Math.ceil(W/3),Math.ceil(H/3));
+    gl.disable(gl.BLEND);
+    gl.useProgram(nebulaProg);
+    u1(nebulaProg,'uT',      T);
+    u1(nebulaProg,'uMid',    AP.sm);
+    u1(nebulaProg,'uEnergy', AP.energy);
+    u1(nebulaProg,'uBass',   AP.sb);
+    drawQuad(nebulaProg);
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER,sceneFBO.fb);
+    gl.viewport(0,0,W,H);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA,gl.ONE);
+    gl.useProgram(thrProg);
+    u1(thrProg,'uThr', -1.0);
+    useTex(thrProg,'uTex',0,nebulaFBO);
+    drawQuad(thrProg);
+  }
+
+  // ── P2: draw particles ────────────────────────────────────
+  // Cosmos uses normal alpha blend (not additive) — dense regions
+  // saturate to color not to white. Other styles keep additive.
+  if(currentStyle===1){
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  } else {
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+  }
+  gl.useProgram(pProg);
+  u1(pProg,'uT',T);
+  u1(pProg,'uBass',  AP.rb);
+  u1(pProg,'uMid',   AP.rm);
+  u1(pProg,'uHi',    AP.rh);
+  u1(pProg,'uEnergy',AP.energy);
+  u1(pProg,'uKick',  AP.kick);
+  u1(pProg,'uBurstFlash',    AP.burstFlash);
+  u1(pProg,'uBurstStrength', burstStrength);
+  u1(pProg,'uPullBack',      pullBack);
+  u1(pProg,'uChaosLevel',    chaosLevel);
+  u1(pProg,'uHiDense',       AP.hiDense);
+  u1(pProg,'uDropAlert',     AP.dropAlert);
+  u1(pProg,'uBassRatio',     AP.bassRatio);
+  u1(pProg,'uHiRatio',       AP.hiRatio);
+  u1(pProg,'uSpectralContrast', AP.spectralContrast);
+  u1(pProg,'uSnare', AP.snare);
+  u1(pProg,'uAspect',W/H);
+  u1(pProg,'uMBass',   MP.bassPhase);
+  u1(pProg,'uMMid',    MP.midPhase);
+  u1(pProg,'uMHi',     MP.hiPhase);
+  u1(pProg,'uMEnergy', MP.energyPhase);
+  u1(pProg,'uMCentroid',MP.spectralCentroid);
+  u1(pProg,'uStyle', currentStyle);
+  u1(pProg,'uMouseX', MOUSE.x);
+  u1(pProg,'uMouseY', MOUSE.y);
+  // [v9] new uniforms
+  u1(pProg,'uSub',           AP.sSub);
+  u1(pProg,'uPresence',      AP.sPresence);
+  u1(pProg,'uSpectralFlux',  AP.spectralFlux);
+  u1(pProg,'uOnsetMid',      AP.onsetMid);
+  u1(pProg,'uOnsetHi',       AP.onsetHi);
+  u1(pProg,'uBurstRadius',   AP.burstRadius);
+  u1(pProg,'uSustainLevel',  AP.sustainLevel);
+  // [v10] new uniforms
+  u1(pProg,'uLowMid',        AP.sLowMid);
+  u1(pProg,'uPump',          AP.pump);
+  u1(pProg,'uMegaPump',      AP.megaPump);
+  // [v12] camera uniforms
+  u1(pProg,'uCamZoom',       CAM.zoom);
+  u1(pProg,'uCamOffX',       CAM.offX);
+  u1(pProg,'uCamOffY',       CAM.offY);
+  u1(pProg,'uCamRotZ',       CAM.rotZ);
+  bindAttr(pProg,'aBase', baseBuf, 3);
+  bindAttr(pProg,'aSeed', seedBuf, 3);
+  bindAttr(pProg,'aLayer',layerBuf,1);
+  
+  let drawRatio = 1.0;
+  if(currentStyle===1){
+    drawRatio = 1.0 - 0.30 * Math.max(0, Math.min(1, (AP.relativeIntensity - 0.45) / 0.30));
+  }
+  const drawCount = Math.floor(N * drawRatio);
+  gl.drawArrays(gl.POINTS,0,drawCount);
+
+  // ── P3: threshold ─────────────────────────────────────────
+  gl.bindFramebuffer(gl.FRAMEBUFFER,thrFBO.fb);
+  gl.viewport(0,0,hw,hh2);
+  gl.disable(gl.BLEND);
+  gl.useProgram(thrProg);
+  // Higher threshold = only bright highlights get bloom, not the entire dense center
+  u1(thrProg,'uThr', currentStyle===1 ? 0.88 : 0.72);
+  useTex(thrProg,'uTex',0,sceneFBO);
+  drawQuad(thrProg);
+
+  // ── P4/P5: blur pass 1 ────────────────────────────────────
+  gl.bindFramebuffer(gl.FRAMEBUFFER,blurA.fb);
+  gl.useProgram(blurProg);
+  u2(blurProg,'uStep',1/hw,0);
+  useTex(blurProg,'uTex',0,thrFBO);
+  drawQuad(blurProg);
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER,blurB.fb);
+  u2(blurProg,'uStep',0,1/hh2);
+  useTex(blurProg,'uTex',0,blurA);
+  drawQuad(blurProg);
+
+  // ── P6/P7: blur pass 2 (wider) ────────────────────────────
+  gl.bindFramebuffer(gl.FRAMEBUFFER,blurA.fb);
+  // Cosmos: wider secondary blur for "galactic glow" corona
+  // 自适应：高强度时用更粗糙的采样保持帧率
+  const intensityFactor = (currentStyle===1 && AP.relativeIntensity > 0.7) ? 1.4 : 1.0;
+  const blurW = (currentStyle===1 ? 2.2 : 1.6) * intensityFactor;
+  u2(blurProg,'uStep',blurW/hw,0);
+  useTex(blurProg,'uTex',0,blurB);
+  drawQuad(blurProg);
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER,blurB.fb);
+  u2(blurProg,'uStep',0,blurW/hh2);
+  useTex(blurProg,'uTex',0,blurA);
+  drawQuad(blurProg);
+
+  // ── P8: composite to screen ───────────────────────────────
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  gl.viewport(0,0,W,H);
+  gl.disable(gl.BLEND);
+  gl.useProgram(cmpProg);
+
+  let bloomStr;
+  if(currentStyle===1){
+    const b2 = AP.rb*AP.rb;
+    const k2 = AP.kick*AP.kick;
+    const m2 = AP.rm*AP.rm;
+    const h2 = AP.rh*AP.rh;
+    const r  = AP.relativeIntensity;
+    
+    bloomStr = 0.06 + b2*(2.00 + r*2.20) + k2*(3.20 + r*4.00) + m2*1.00 + h2*1.50;
+    // [v10] lowMid contributes to bloom (pads/chords = warm glow)
+    bloomStr += AP.rLowMid * AP.rLowMid * 0.40;
+    // [v9] Spectral flux adds bloom surge on any transient
+    bloomStr += AP.spectralFlux * 2.0;
+    // [v9] Burst bloom surge
+    bloomStr += AP.burstRadius * 1.5;
+    // [v10] Pump modulates bloom — compressed=ducked, release=bloom surge
+    bloomStr *= (1.0 - AP.pump * 0.20);
+    bloomStr = Math.min(bloomStr, 8.0);
+  } else {
+    const r = AP.relativeIntensity;
+    const b2 = AP.rb*AP.rb;
+    const m2 = AP.rm*AP.rm;
+    const h2 = AP.rh*AP.rh;
+    bloomStr = 0.06 + b2*(0.12 + r*0.40) + AP.kick*(0.15 + r*0.85) + m2*0.08 + h2*0.14;
+    // [v10] lowMid
+    bloomStr += AP.rLowMid * AP.rLowMid * 0.04;
+    bloomStr += AP.spectralFlux * 1.2;
+    bloomStr += AP.burstRadius * 0.8;
+    bloomStr *= (1.0 - AP.pump * 0.15);
+    // [v11] megaPump: massive bloom surge on drop (especially Geometry)
+    bloomStr += AP.megaPump * AP.megaPump * (currentStyle === 3 ? 3.5 : 1.5);
+    bloomStr = Math.min(bloomStr, 4.0);
+  }
+  u1(cmpProg,'uBStr', bloomStr);
+  u1(cmpProg,'uBassScale', bgScaleSmooth);
+  u1(cmpProg,'uStyle', currentStyle);
+  u1(cmpProg,'uBurstFlash', AP.burstFlash);
+  u1(cmpProg,'uRelIntensity', AP.relativeIntensity);
+  // [v11] Geometry: no screen shake — particle scatter replaces it
+  u1(cmpProg,'uCameraShake', currentStyle === 3 ? 0.0 : AP.cameraShake);  // [v9]
+  u1(cmpProg,'uTime', T);                       // [v9]
+  u1(cmpProg,'uCamZoomComp', CAM.zoom);          // [v12]
+  const st=STYLES[currentStyle];
+  // All styles: bloom tint shifts with spectral balance
+  let bR = st.bloomR, bG = st.bloomG, bB = st.bloomB;
+  {
+    // Bass-heavy → warmer bloom, Hi-heavy → cooler bloom
+    const sc = AP.spectralContrast; // positive=bass, negative=hi
+    const intensity = (currentStyle===1) ? 1.0 : 0.6;  // Cosmos gets stronger shift
+    bR += sc * 0.35 * intensity;
+    bG += sc * 0.10 * intensity;
+    bB -= sc * 0.30 * intensity;
+  }
+  u3(cmpProg,'uBloomTint', bR, bG, bB);
+  u3(cmpProg,'uBgTint', bgT[0], bgT[1], bgT[2]);
+  useTex(cmpProg,'uScene',0,sceneFBO);
+  useTex(cmpProg,'uBloom',1,blurB);
+  drawQuad(cmpProg);
+}
+</script>
+</body>
+</html>
