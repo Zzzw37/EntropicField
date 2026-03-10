@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Entropic Field</title>
+<title>Entropic Field v9</title>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
 html,body { width:100%; height:100%; background:#000; overflow:hidden; }
@@ -191,6 +191,23 @@ canvas { display:block; position:fixed; inset:0; }
   margin-bottom:8px; text-transform:uppercase;
 }
 
+/* ── Stop / Back button ────────────────────────── */
+#stop-btn {
+  position:fixed; left:22px; top:22px; z-index:20;
+  display:none; background:none;
+  border:1px solid rgba(255,255,255,0.10);
+  color:rgba(255,255,255,0.4); cursor:pointer;
+  font-family:'Courier New',monospace; font-size:9px;
+  letter-spacing:2px; border-radius:2px;
+  padding:8px 14px; transition:all .2s;
+}
+#stop-btn.on { display:block; }
+#stop-btn:hover {
+  border-color:rgba(255,255,255,0.35);
+  color:rgba(255,255,255,0.8);
+  background:rgba(255,255,255,0.04);
+}
+
 /* ── Fullscreen btn ────────────────────────────── */
 #fs-btn {
   position:fixed; left:22px; bottom:22px; z-index:20;
@@ -262,7 +279,7 @@ canvas { display:block; position:fixed; inset:0; }
   </div>
 
   <button id="pb">Initialize</button>
-  <div class="init-hint">Space · Arrows · 1–5 · F · ? for keys</div>
+  <div class="init-hint">Space · Arrows · 1–5 · F · Esc · ? for keys</div>
   <div class="copyright">EveryZ Studio © copyright reserved 2026</div>
 </div>
 
@@ -277,6 +294,7 @@ canvas { display:block; position:fixed; inset:0; }
 </div>
 
 <button id="fs-btn" title="Fullscreen (F)">⛶&#xFE0E;</button>
+<button id="stop-btn" title="Stop & return (Esc)">✕ STOP</button>
 
 <div id="vol-wrap">
   <div id="vol-track">
@@ -295,6 +313,7 @@ canvas { display:block; position:fixed; inset:0; }
     <span class="kb-key">1 – 5</span><span class="kb-desc">Visual Style</span>
     <span class="kb-key">F</span><span class="kb-desc">Fullscreen</span>
     <span class="kb-key">M</span><span class="kb-desc">Mute</span>
+    <span class="kb-key">Esc</span><span class="kb-desc">Stop &amp; Return</span>
     <span class="kb-key">?</span><span class="kb-desc">This overlay</span>
   </div>
 </div>
@@ -1026,6 +1045,8 @@ function onSongEnded(){
 
 function showEndOverlay(){
   isPlaying=false;
+  if(srcNode){ try{srcNode.stop();}catch(e){} srcNode=null; }
+  if(actx && actx.state === 'suspended') actx.resume();
   fnEl.textContent='';
   pbEl.style.display='none';
   pbEl.textContent='Play';
@@ -1039,12 +1060,20 @@ function showEndOverlay(){
   document.getElementById('style-switcher').classList.remove('on');
   document.getElementById('vol-wrap').classList.remove('on');
   document.getElementById('fs-btn').classList.remove('on');
+  document.getElementById('stop-btn').classList.remove('on');
   requestAnimationFrame(()=>{
     uiEl.style.transition='opacity 1.2s ease';
     uiEl.style.opacity='1';
   });
   uiEl.classList.remove('gone');
 }
+
+// Stop playback and return to upload screen
+function stopAndReturn(){
+  showEndOverlay();
+}
+
+document.getElementById('stop-btn').addEventListener('click', stopAndReturn);
 
 // ================================================================
 // UI
@@ -1063,19 +1092,39 @@ function fmtTime(s){
 }
 
 dzEl.addEventListener('click',()=>fiEl.click());
-dzEl.addEventListener('dragover',e=>e.preventDefault());
-dzEl.addEventListener('drop',e=>{ e.preventDefault(); loadf(e.dataTransfer.files[0]); });
+dzEl.addEventListener('dragover',e=>{ e.preventDefault(); e.stopPropagation(); });
+dzEl.addEventListener('dragenter',e=>{ e.preventDefault(); e.stopPropagation(); dzEl.style.borderColor='rgba(220,175,70,0.95)'; });
+dzEl.addEventListener('dragleave',e=>{ dzEl.style.borderColor=''; });
+dzEl.addEventListener('drop',e=>{ e.preventDefault(); e.stopPropagation(); dzEl.style.borderColor=''; loadf(e.dataTransfer.files[0]); });
 fiEl.addEventListener('change',e=>loadf(e.target.files[0]));
+
+// Prevent browser default file-open on body drop (fixes drag-drop reliability)
+document.body.addEventListener('dragover',e=>{ e.preventDefault(); });
+document.body.addEventListener('dragenter',e=>{ e.preventDefault(); });
+document.body.addEventListener('drop',e=>{
+  e.preventDefault();
+  // If UI is visible, treat body drop as drop zone drop
+  if(uiEl && !uiEl.classList.contains('gone') && e.dataTransfer && e.dataTransfer.files[0]){
+    loadf(e.dataTransfer.files[0]);
+  }
+});
 
 async function loadf(file){
   if(!file) return;
-  if(!actx) actx=new(window.AudioContext||window.webkitAudioContext)();
-  await actx.resume();  // fix delay — context may be suspended
-  abuf=await actx.decodeAudioData(await file.arrayBuffer());
-  songDuration=abuf.duration;
-  fnEl.textContent=file.name.replace(/\.[^/.]+$/,'');
-  pbEl.style.display='block';
-  pbEl.textContent='Play';
+  try {
+    if(!actx) actx=new(window.AudioContext||window.webkitAudioContext)();
+    if(actx.state === 'suspended') await actx.resume();
+    const arrayBuf = await file.arrayBuffer();
+    abuf=await actx.decodeAudioData(arrayBuf);
+    songDuration=abuf.duration;
+    fnEl.textContent=file.name.replace(/\.[^/.]+$/,'');
+    pbEl.style.display='block';
+    pbEl.textContent='Play';
+  } catch(err) {
+    console.error('Audio load error:', err);
+    fnEl.textContent='Error loading file – try again';
+    pbEl.style.display='none';
+  }
 }
 
 let isDragging=false;
@@ -1227,6 +1276,7 @@ function startPlayback(){
   document.getElementById('style-switcher').classList.add('on');
   document.getElementById('vol-wrap').classList.add('on');
   document.getElementById('fs-btn').classList.add('on');
+  document.getElementById('stop-btn').classList.add('on');
   progTot.textContent = fmtTime(songDuration);
   pauseBtn.textContent = '❙❙';
 
@@ -1352,7 +1402,10 @@ document.addEventListener('keydown', e=>{
     case 'Digit5': case 'Numpad5': setStyle(4); break;
     case 'KeyF': toggleFullscreen(); break;
     case 'KeyM': setVolume(currentVolume > 0.01 ? 0 : 0.7); break;
-    case 'Escape': kbHints.classList.remove('on'); break;
+    case 'Escape':
+      if(kbHints.classList.contains('on')){ kbHints.classList.remove('on'); }
+      else { stopAndReturn(); }
+      break;
   }
   if(e.key === '?') toggleKbHints();
 });
