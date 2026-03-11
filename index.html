@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Entropic Field</title>
+<title>Entropic Field v14</title>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
 html,body { width:100%; height:100%; background:#000; overflow:hidden; }
@@ -386,6 +386,17 @@ var AP = { sb:0,sm:0,sh:0, rb:0,rm:0,rh:0,
            pumpDepth:0,                // how deep the pump bites (energy-scaled)
            // [v11] megaPump: drop-triggered massive pump (0=relaxed, 1=max compression)
            megaPump:0,
+           // [v14] mid-band split + formant dynamics + groove lock
+           rMidCore:0, sMidCore:0,     // mid-core (776–1808Hz) growl formant zone
+           rUpperMid:0, sUpperMid:0,   // upper-mid (1808–3017Hz) lead harmonics
+           formantDrive:0,             // continuous formant sweep signal (midCore delta)
+           beatPhase:0,                // 0→1 per beat, phase-locked to BPM
+           spectralCentroid:0,         // real-time spectral centroid (0–1)
+           // [v15] timbral descriptors — flatness, roughness, MFCC
+           spectralFlatness:0,         // 0=tonal/narrow, 1=noisy/broadband
+           roughness:0,                // psychoacoustic roughness approx (inter-bin variance)
+           mfcc1:0,                    // spectral tilt (low vs high energy balance)
+           mfcc2:0,                    // spectral curvature (single vs dual peak — formant structure)
            };
 let longTermEnergy = 0;
 let peakEnergy     = 0.01;
@@ -494,11 +505,150 @@ let snareThreshAdapt = 0.10;
 // [v9] per-band onset accumulators
 let prevMidBand = 0;
 let prevHiBand  = 0;
+let prevMidCore = 0;  // [v14] for formant dynamics delta tracking
 
 // [v10] Global pump envelope — sidechain-style compressor feel
 // pumpEnv: 0 = fully compressed (kick moment), 1 = fully released (between beats)
 // Release curve follows BPM so the breathing locks to groove automatically
 let pumpEnv = 1.0;
+
+// ═══════════════════════════════════════════════════════════════════
+// [v15] TIMBRAL DESCRIPTORS — Spectral Flatness, Roughness, MFCC
+//
+// Pre-computed mel filterbank for lightweight MFCC extraction.
+// At 44100Hz, fftSize=1024 → 512 bins, binWidth ≈ 43.07 Hz
+//
+// We use 13 mel-spaced triangular filters covering 0–8000 Hz.
+// Only MFCC C1 (spectral tilt) and C2 (curvature) are computed —
+// C0 is just energy which we already have.
+//
+// The mel filterbank is built once on first call, then reused.
+// Total per-frame cost: ~0.5ms on modern hardware.
+// ═══════════════════════════════════════════════════════════════════
+
+let melBank = null;  // lazy-initialized array of {startBin, endBin, weights[]}
+const N_MEL_BANDS = 13;
+const MEL_FMAX = 8000;
+
+function hzToMel(hz) { return 2595 * Math.log10(1 + hz / 700); }
+function melToHz(m) { return 700 * (Math.pow(10, m / 2595) - 1); }
+
+function buildMelFilterbank(binCount, sampleRate) {
+  const binWidth = sampleRate / (binCount * 2);  // Hz per bin
+  const melMin = hzToMel(0);
+  const melMax = hzToMel(MEL_FMAX);
+  
+  // N_MEL_BANDS + 2 edge frequencies
+  const melPoints = [];
+  for (let i = 0; i <= N_MEL_BANDS + 1; i++) {
+    const mel = melMin + (melMax - melMin) * i / (N_MEL_BANDS + 1);
+    melPoints.push(Math.floor(melToHz(mel) / binWidth));
+  }
+  
+  const bank = [];
+  for (let m = 0; m < N_MEL_BANDS; m++) {
+    const start = melPoints[m];
+    const center = melPoints[m + 1];
+    const end = melPoints[m + 2];
+    const filter = { startBin: start, endBin: Math.min(end, binCount - 1), weights: [] };
+    
+    for (let k = start; k <= filter.endBin; k++) {
+      let w;
+      if (k <= center) {
+        w = (center === start) ? 1 : (k - start) / (center - start);
+      } else {
+        w = (end === center) ? 1 : (end - k) / (end - center);
+      }
+      filter.weights.push(Math.max(0, w));
+    }
+    bank.push(filter);
+  }
+  return bank;
+}
+
+// Pre-computed DCT-II basis for 13 bands, coefficients 1 and 2 only
+// dctBasis[c][m] = cos(PI * c * (m + 0.5) / N_MEL_BANDS)
+const dctBasis = [[], []];
+for (let c = 1; c <= 2; c++) {
+  for (let m = 0; m < N_MEL_BANDS; m++) {
+    dctBasis[c - 1].push(Math.cos(Math.PI * c * (m + 0.5) / N_MEL_BANDS));
+  }
+}
+
+function computeTimbreDescriptors(fdata, binCount) {
+  // ── 1. Spectral Flatness ──────────────────────────────────────
+  // geometric mean / arithmetic mean of power spectrum
+  // Use log-sum for geometric mean to avoid float precision issues
+  let logSum = 0, linSum = 0, validCount = 0;
+  // Skip bin 0 (DC), sample every other bin for performance
+  for (let i = 1; i < binCount; i += 2) {
+    const val = fdata[i] / 255;
+    if (val > 0.0001) {
+      logSum += Math.log(val + 1e-10);
+      linSum += val;
+      validCount++;
+    }
+  }
+  let flatness = 0;
+  if (validCount > 2 && linSum > 0.01) {
+    const geoMean = Math.exp(logSum / validCount);
+    const ariMean = linSum / validCount;
+    flatness = geoMean / (ariMean + 1e-10);
+  }
+  
+  // ── 2. Roughness (spectral roughness approximation) ───────────
+  // Sum of squared differences between adjacent bin energies,
+  // weighted by a critical-band-like curve.
+  // Bins closer together in frequency contribute more to perceived roughness.
+  // We focus on the 200–4000 Hz range where roughness perception is strongest.
+  const roughStartBin = Math.max(1, Math.floor(200 / (44100 / (binCount * 2))));
+  const roughEndBin = Math.min(binCount - 1, Math.floor(4000 / (44100 / (binCount * 2))));
+  let roughSum = 0;
+  let roughCount = 0;
+  for (let i = roughStartBin; i < roughEndBin; i++) {
+    const a = fdata[i] / 255;
+    const b = fdata[i + 1] / 255;
+    const diff = a - b;
+    // Weight by geometric mean of adjacent bins — only count roughness
+    // where there's actual energy (silence shouldn't register as rough)
+    const energy = (a + b) * 0.5;
+    roughSum += diff * diff * energy;
+    roughCount++;
+  }
+  const roughness = roughCount > 0 ? Math.sqrt(roughSum / roughCount) * 4.0 : 0;  // scale to ~0-1
+  
+  // ── 3. MFCC C1 & C2 (simplified) ─────────────────────────────
+  // Apply mel filterbank → log energy → DCT coefficients 1 & 2
+  if (!melBank) {
+    melBank = buildMelFilterbank(binCount, 44100);
+  }
+  
+  const melEnergies = new Float32Array(N_MEL_BANDS);
+  for (let m = 0; m < N_MEL_BANDS; m++) {
+    const f = melBank[m];
+    let e = 0;
+    for (let k = 0; k < f.weights.length; k++) {
+      const bin = f.startBin + k;
+      if (bin < binCount) {
+        const val = fdata[bin] / 255;
+        e += val * val * f.weights[k];  // power spectrum * filter weight
+      }
+    }
+    melEnergies[m] = Math.log(e + 1e-10);  // log mel energy
+  }
+  
+  // DCT-II: only C1 and C2
+  let c1 = 0, c2 = 0;
+  for (let m = 0; m < N_MEL_BANDS; m++) {
+    c1 += melEnergies[m] * dctBasis[0][m];
+    c2 += melEnergies[m] * dctBasis[1][m];
+  }
+  // Normalize roughly to [-1, 1] range
+  c1 /= N_MEL_BANDS;
+  c2 /= N_MEL_BANDS;
+  
+  return { flatness, roughness, mfcc1: c1, mfcc2: c2 };
+}
 
 function tick_audio(dt){
   if(!analyser) return;
@@ -508,12 +658,14 @@ function tick_audio(dt){
   function avg(a,b){ let s=0; for(let i=a;i<b;i++) s+=fdata[i]; return s/((b-a)*255); }
 
   // ═══════════════════════════════════════════════════════════════
-  // [v10] REFINED 6-BAND DECOMPOSITION
+  // [v14] REFINED 8-BAND DECOMPOSITION
   // At 44100Hz, fftSize=1024: each bin ≈ 43.07 Hz
   //   Sub:       bins 1–2    (~43–86 Hz)     — sub-bass rumble, kick fundamental
   //   Bass:      bins 1–6    (~43–258 Hz)    — full bass (includes sub)
   //   Low-mid:   bins 6–18   (~258–776 Hz)   — warmth, bass guitar, pads, low synths
-  //   Mid:       bins 18–70  (~776–3017 Hz)  — vocal, synth lead, melody
+  //   MidCore:   bins 18–42  (~776–1808 Hz)  — growl formant zone, vocal body
+  //   UpperMid:  bins 42–70  (~1808–3017 Hz) — synth lead harmonics, vocal air
+  //   Mid:       bins 18–70  (~776–3017 Hz)  — combined mid (legacy, still used)
   //   Snare:     bins 25–90  (~1077–3876 Hz) — snare body + crack
   //   Presence:  bins 70–140 (~3017–6030 Hz) — vocal sibilance, synth brightness
   //   Hi:        bins 140–256(~6030–11025Hz) — cymbals, hi-hats, air, brilliance
@@ -521,7 +673,9 @@ function tick_audio(dt){
   const sub_band     = avg(1,3);
   const bass_band    = avg(1,6);
   const lowmid_band  = avg(6,18);
-  const mid_band     = avg(18,70);
+  const midcore_band = avg(18,42);    // [v14] growl formant zone
+  const uppermid_band= avg(42,70);    // [v14] lead harmonics
+  const mid_band     = avg(18,70);    // legacy combined mid
   const snare_band   = avg(25,90);
   const presence_band= avg(70,140);
   const hi_band      = avg(140, Math.min(256, binCount));
@@ -532,6 +686,8 @@ function tick_audio(dt){
   AP.rSub = sub_band;
   AP.rPresence = presence_band;
   AP.rLowMid = lowmid_band;
+  AP.rMidCore = midcore_band;      // [v14]
+  AP.rUpperMid = uppermid_band;    // [v14]
 
   // ── Asymmetric envelope followers (attack/release per band) ──
   // Sub: very slow release (deep structural weight)
@@ -542,6 +698,14 @@ function tick_audio(dt){
   AP.sLowMid = lowmid_band > AP.sLowMid
     ? AP.sLowMid*0.38 + lowmid_band*0.62
     : AP.sLowMid*0.80 + lowmid_band*0.20;
+  // [v14] MidCore: medium attack/release (growl formant — needs to track vowel-like changes)
+  AP.sMidCore = midcore_band > AP.sMidCore
+    ? AP.sMidCore*0.32 + midcore_band*0.68
+    : AP.sMidCore*0.76 + midcore_band*0.24;
+  // [v14] UpperMid: slightly faster (lead harmonics are more transient)
+  AP.sUpperMid = uppermid_band > AP.sUpperMid
+    ? AP.sUpperMid*0.30 + uppermid_band*0.70
+    : AP.sUpperMid*0.72 + uppermid_band*0.28;
   // Mid: balanced attack/release
   AP.sm = m > AP.sm ? AP.sm*0.35 + m*0.65 : AP.sm*0.74 + m*0.26;
   // Presence: fast attack, medium release
@@ -584,6 +748,66 @@ function tick_audio(dt){
     ? AP.onsetHi * 0.25 + hiDelta * 0.75
     : AP.onsetHi * 0.72;
 
+  // ── [v14] Formant dynamics — continuous formant sweep perception ──
+  // Tracks frame-to-frame delta of midCore band (776–1808 Hz)
+  // Captures the "vowel movement" of growl bass, formant sweeps, etc.
+  // Fast attack for sudden formant shifts, slow release for sustain
+  const midCoreDelta = Math.abs(midcore_band - prevMidCore);
+  AP.formantDrive = midCoreDelta > AP.formantDrive
+    ? AP.formantDrive * 0.3 + midCoreDelta * 0.7
+    : AP.formantDrive * 0.75;
+  prevMidCore = midcore_band;
+
+  // ── [v14] Spectral centroid — real-time timbral brightness ──
+  // Weighted mean frequency of the spectrum, normalized to 0–1
+  // Low = dark/bassy timbre, High = bright/airy timbre
+  // Used in shader to shift noise field frequency and color temperature
+  {
+    let weightedSum = 0, totalEnergy = 0;
+    for(let i = 1; i < binCount; i += 2){
+      const val = fdata[i] / 255;
+      weightedSum += i * val;
+      totalEnergy += val;
+    }
+    const rawCentroid = totalEnergy > 0.01 ? weightedSum / (totalEnergy * binCount) : 0.5;
+    AP.spectralCentroid = AP.spectralCentroid * 0.92 + rawCentroid * 0.08;
+  }
+
+  const now = performance.now() / 1000;
+
+  // ── [v14] Beat phase — phase-locked LFO from estimated BPM ──
+  // 0→1 per beat, allows shader to create groove-locked periodic motion
+  // instead of purely amplitude-following movement
+  if(lastKickTime > 0 && estimatedBPM > 60){
+    const beatDurSec = 60 / estimatedBPM;
+    AP.beatPhase = ((now - lastKickTime) / beatDurSec) % 1.0;
+  }
+
+  // ── [v15] Timbral descriptors — flatness, roughness, MFCC ────
+  // Computed every frame from FFT data. Each signal is smoothed with
+  // asymmetric attack/release to avoid jitter while tracking real changes.
+  {
+    const td = computeTimbreDescriptors(fdata, binCount);
+    
+    // Spectral flatness: medium smoothing (changes with texture, not per-note)
+    AP.spectralFlatness = td.flatness > AP.spectralFlatness
+      ? AP.spectralFlatness * 0.6 + td.flatness * 0.4
+      : AP.spectralFlatness * 0.88 + td.flatness * 0.12;
+    
+    // Roughness: fast attack (distortion onset is sudden), slow release
+    AP.roughness = td.roughness > AP.roughness
+      ? AP.roughness * 0.35 + td.roughness * 0.65
+      : AP.roughness * 0.85 + td.roughness * 0.15;
+    
+    // MFCC C1 (spectral tilt): slow tracking — this is a macro descriptor
+    AP.mfcc1 = AP.mfcc1 * 0.90 + td.mfcc1 * 0.10;
+    
+    // MFCC C2 (curvature): medium-fast — tracks formant changes
+    AP.mfcc2 = td.mfcc2 > AP.mfcc2
+      ? AP.mfcc2 * 0.45 + td.mfcc2 * 0.55
+      : AP.mfcc2 * 0.82 + td.mfcc2 * 0.18;
+  }
+
   // ── [v9] Sustain level — smooth envelope of overall energy ────
   AP.sustainLevel = AP.sustainLevel * 0.96 + AP.energy * 0.04;
 
@@ -609,8 +833,6 @@ function tick_audio(dt){
   kickCooldown  = Math.max(0, kickCooldown-1);
   snareCooldown = Math.max(0, snareCooldown-1);
   postDropCooldown = Math.max(0, postDropCooldown-1);
-
-  const now = performance.now() / 1000;
 
   // ── [v9] Adaptive kick threshold ─────────────────────────────
   // Threshold slowly tracks recent kick-band peaks — adapts to loud/quiet tracks
@@ -694,6 +916,18 @@ function tick_audio(dt){
     pumpEnv = pumpEnv * (1.0 - attackStr * 0.85);  // snap toward 0
   }
 
+  // [v14] Sub-bass auxiliary pump: growl bass between kicks also compresses slightly
+  // Uses fast RMS of sub+bass band — each growl "syllable" gets a micro-pump
+  // Much gentler than kick pump (0.30 vs 0.85), but fills the gaps with breathing
+  {
+    const subBassRMS = sub_band * 0.4 + bass_band * 0.6;
+    const subThresh = 0.08 + AP.sSub * 0.5;  // adaptive threshold tracks sub level
+    if(subBassRMS > subThresh && kickCooldown > 4){
+      const auxAttack = Math.min((subBassRMS - subThresh) * 3.0, 0.5);
+      pumpEnv = pumpEnv * (1.0 - auxAttack * 0.30);  // gentler than kick
+    }
+  }
+
   // Pump depth: how much the envelope actually affects visuals
   // Scales with energy stage — quiet=nothing, loud=full
   // [v11] faster response: 0.92/0.08 instead of 0.95/0.05 — pump wakes up quicker
@@ -741,9 +975,13 @@ function tick_audio(dt){
 
   const bassReturn = b > preBassEnergy * 2.2 && preBassEnergy < 0.12;
   bassRiseAccum = bassDeriv > 0.003 ? bassRiseAccum + bassDeriv : bassRiseAccum * 0.85;
-  const gradualDrop = bassRiseAccum > 0.08 && preBassEnergy < 0.15 && buildupHi > 0.03;
+  // [v14] Lower threshold for gradual drops in dark bass/midtempo
+  // Bass-gradient drop: doesn't require buildupHi > 0.03 — bass alone can trigger
+  const gradualDrop = bassRiseAccum > 0.06 && preBassEnergy < 0.15 && buildupHi > 0.02;
+  // [v14] Pure bass gradient: for tracks where hi doesn't build at all
+  const bassGradientDrop = bassRiseAccum > 0.12 && preBassEnergy < 0.12;
 
-  if((bassReturn || gradualDrop) && buildupHi > 0.03 && postDropCooldown === 0){
+  if((bassReturn || gradualDrop || bassGradientDrop) && (buildupHi > 0.02 || bassGradientDrop) && postDropCooldown === 0){
     dropAlert = 1.0;
     buildupHi = 0;
     bassRiseAccum = 0;
@@ -840,7 +1078,7 @@ function tick_audio(dt){
   MP.energyPhase += AP.energy * 0.008 + 0.001;
 
   const total = AP.sb+AP.sm+AP.sh+0.001;
-  MP.spectralCentroid = MP.spectralCentroid*0.97 + (AP.sh/total)*0.03;
+  MP.spectralCentroid = AP.spectralCentroid;  // [v14] use real-time centroid
   AP.dropAlert = dropAlert;
 }
 
@@ -1252,6 +1490,10 @@ function startPlayback(){
   AP.spectralFlux=0; AP.onsetMid=0; AP.onsetHi=0;
   AP.burstRadius=0; AP.cameraShake=0; AP.trailPersist=0; AP.sustainLevel=0;
   AP.sLowMid=0; AP.rLowMid=0; AP.pump=0; AP.pumpDepth=0; AP.megaPump=0;  // [v10][v11]
+  AP.rMidCore=0; AP.sMidCore=0; AP.rUpperMid=0; AP.sUpperMid=0;         // [v14]
+  AP.formantDrive=0; AP.beatPhase=0; AP.spectralCentroid=0.5;           // [v14]
+  AP.spectralFlatness=0; AP.roughness=0; AP.mfcc1=0; AP.mfcc2=0;       // [v15]
+  prevMidCore = 0;                                                       // [v14]
   pumpEnv = 1.0;  // [v10]
   MP.bassPhase=0; MP.midPhase=0; MP.hiPhase=0; MP.energyPhase=0; MP.spectralCentroid=0.5;
   bassHist.fill(0); midHist.fill(0); hiHist.fill(0); histIdx=0;
@@ -1650,6 +1892,17 @@ uniform float uSustainLevel;          // smoothed sustain envelope
 uniform float uLowMid;               // low-mid band (258–776Hz) pads/chords
 uniform float uPump;                  // global sidechain envelope (0=relaxed, higher=compressed)
 uniform float uMegaPump;              // [v11] drop-triggered massive pump (0=relaxed, 1=max)
+// [v14] mid-band split + formant dynamics + groove lock
+uniform float uMidCore;              // mid-core band (776–1808Hz) growl formant
+uniform float uUpperMid;             // upper-mid band (1808–3017Hz) lead harmonics
+uniform float uFormantDrive;         // continuous formant sweep signal
+uniform float uBeatPhase;            // 0→1 per beat, BPM-locked
+uniform float uSpectralCentroid;     // real-time spectral centroid (0=dark, 1=bright)
+// [v15] timbral descriptors
+uniform float uFlatness;             // spectral flatness (0=tonal, 1=noisy)
+uniform float uRoughness;            // psychoacoustic roughness (0=smooth, ~1=harsh)
+uniform float uMFCC1;                // spectral tilt (negative=bass-heavy, positive=treble-heavy)
+uniform float uMFCC2;                // spectral curvature (formant structure — single vs dual peak)
 // [v12] camera — song-structure-driven perspective shifts
 uniform float uCamZoom;               // zoom factor (1=normal, >1=zoomed in)
 uniform float uCamOffX, uCamOffY;     // camera offset (normalized)
@@ -1663,6 +1916,7 @@ varying float vDepth;
 varying float vFlash;
 varying float vHiEnergy;
 varying float vBassWeight;
+varying float vRoughness;  // [v15] timbral roughness for fragment shader
 
 float hash(float n){ return fract(sin(n)*43758.5453); }
 float noise3(vec3 p){
@@ -1722,11 +1976,14 @@ void main(){
   // [v9] Spectral flux micro-displacement: onset-reactive jitter
   // [v13] Softer oscillation frequencies (was t*3.0/2.5/4.0 → t*1.2/0.9/1.5)
   // and reduced amplitude. Original was too jittery — felt like noise, not rhythm.
+  // [v14] formantDrive adds continuous perturbation scaled by spectral centroid
   float fluxNudge = uSpectralFlux * 0.04;
+  float formantNudge = uFormantDrive * 0.025;
+  float centroidFreqGlobal = 1.0 + uSpectralCentroid * 1.5;
   pos += vec3(
-    sin(s0 * 11.3 + t * 1.2) * fluxNudge,
-    cos(s1 * 9.7 + t * 0.9) * fluxNudge,
-    sin(s2 * 13.1 + t * 1.5) * fluxNudge
+    sin(s0 * 11.3 + t * 1.2) * fluxNudge + sin(s0 * 7.1 + t * centroidFreqGlobal) * formantNudge,
+    cos(s1 * 9.7 + t * 0.9) * fluxNudge + cos(s1 * 5.9 + t * centroidFreqGlobal * 0.8) * formantNudge,
+    sin(s2 * 13.1 + t * 1.5) * fluxNudge + sin(s2 * 8.3 + t * centroidFreqGlobal * 1.1) * formantNudge
   );
   
   // [v9] Mid onset: melodic transient pushes mid-layer particles tangentially
@@ -1931,10 +2188,22 @@ void main(){
       harm += bassPulse * sin(s0 * 3.0 + t * 1.5);
       
       // MID drives NON-LINEAR twisting vortex in core
+      // [v14] midCore (growl formant) is primary vortex driver, upperMid adds detail
       float coreDist = length(pos.xz);
-      float vortexPhase = atan(pos.z, pos.x) + coreDist * 8.0 + t * 0.8 + uMid * 3.0;
-      float vortexStr = (1.0 - smoothstep(0.0, 0.5, coreDist)) * uMid * 0.40;
+      float vortexPhase = atan(pos.z, pos.x) + coreDist * 8.0 + t * 0.8 + uMidCore * 3.5 + uUpperMid * 1.5;
+      float vortexStr = (1.0 - smoothstep(0.0, 0.5, coreDist)) * (uMidCore * 0.35 + uUpperMid * 0.15);
       pos.xz += vec2(cos(vortexPhase), sin(vortexPhase)) * vortexStr;
+      
+      // [v14] FormantDrive: core turbulence modulated by formant dynamics
+      // Growl formant changes → core particles ripple
+      if(uFormantDrive > 0.005){
+        float fmtTurb = uFormantDrive * 0.08;
+        pos += vec3(
+          sin(s0 * 9.0 + t * 1.5) * fmtTurb,
+          cos(s1 * 7.0 + t * 1.2) * fmtTurb * 0.6,
+          sin(s2 * 11.0 + t * 1.8) * fmtTurb
+        );
+      }
       
       // BASS vertical oscillation (structure: up/down heave)
       float vertWave = sin(s0 * 5.0 + t * 1.8 + uBass * 3.0) 
@@ -1961,6 +2230,10 @@ void main(){
       ) * 0.06 * hiGate * uHi;
       pos += hiShimmer;
       
+      // [v15] Roughness: core vibrates in place when rough (distorted growl = buzzing core)
+      float coreRoughVib = clamp(uRoughness, 0.0, 1.0) * 0.035;
+      pos += vec3(sin(s0*28.+t*14.), cos(s1*24.+t*12.), sin(s2*30.+t*15.)) * coreRoughVib;
+      
     } else if(aLayer < 1.5){
       // ── DISK: MID = WAVE PROPAGATION, BASS = RADIAL BREATHING ──
       // MID: spiral density waves
@@ -1974,9 +2247,13 @@ void main(){
       
       // MID: disk warping (bending the plane)
       float warpPhase = spiralPhase + t * 0.6;
-      // [v10] lowMid (pads/chords) adds gentle warp, mid (vocal/lead) adds sharp warp
-      float warpAmount = sin(warpPhase * 2.0) * (uMid * uMid * 0.18 + uLowMid * 0.08);
+      // [v14] midCore (growl) adds slow structural warp, upperMid (lead) adds sharper detail warp
+      float warpAmount = sin(warpPhase * 2.0) * (uUpperMid * uUpperMid * 0.16 + uMidCore * 0.10 + uLowMid * 0.08);
       pos.y += warpAmount * (1.0 - abs(pos.y) * 2.0);
+      
+      // [v14] FormantDrive: disk-level dust lane perturbation
+      float fmtDiskTurb = uFormantDrive * 0.04 * armDensity;
+      pos.xz += vec2(sin(spiralPhase * 3.0 + t * 0.8), cos(spiralPhase * 3.0 + t * 0.7)) * fmtDiskTurb;
       
       // BASS: radial breathing (structural contraction/expansion)
       float breathePhase = t * 0.9 + s0 * 2.0;
@@ -2039,19 +2316,21 @@ void main(){
     
     // ── COLOR ZONES (radial gradient + HI-DRIVEN COLOR TEMPERATURE) ──
     // Base hue from radial position, then hi shifts toward cooler/bluer
+    // [v14] spectralCentroid modulates overall color temperature
     float hiColorShift = uHi * 0.10;   // hi active = push toward blue-violet
     float bassWarmShift = uBass * 0.06; // bass active = push toward warm gold
+    float centroidHueShift = (uSpectralCentroid - 0.5) * 0.06; // dark=warm, bright=cool
     float zoneMix = clamp(rTarget * 1.2, 0.0, 1.0);
     
     if(aLayer < 0.5){
       // Core: blue-white, hi pushes deeper blue, bass pushes white-hot
-      vHue = 0.54 + pos.y * 0.04 + gasPockets * 0.03 + hiColorShift - bassWarmShift;
+      vHue = 0.54 + pos.y * 0.04 + gasPockets * 0.03 + hiColorShift - bassWarmShift + centroidHueShift;
     } else if(aLayer < 1.5){
       // Disk: violet-magenta, hi pushes more violet, bass warms toward rose
-      vHue = 0.72 + armDensity * 0.06 - dustFactor * 0.05 + hiColorShift * 0.7 - bassWarmShift * 0.5;
+      vHue = 0.72 + armDensity * 0.06 - dustFactor * 0.05 + hiColorShift * 0.7 - bassWarmShift * 0.5 + centroidHueShift * 0.7;
     } else {
       // Halo: gold-rose, hi pushes toward violet, bass deepens gold
-      vHue = 0.90 + pos.x * 0.04 + gasPockets * 0.03 + hiColorShift * 1.2 - bassWarmShift * 0.8;
+      vHue = 0.90 + pos.x * 0.04 + gasPockets * 0.03 + hiColorShift * 1.2 - bassWarmShift * 0.8 + centroidHueShift * 1.2;
     }
     
     // ── BRIGHTNESS NORMALIZATION ────────────────────────────────
@@ -2354,21 +2633,53 @@ void main(){
     vDepth = pos.z + 1.5;
 
   // ════════════════════════════════════════════════════════════
-  // ENTROPIC — frequency-decoupled v6
+  // ENTROPIC — frequency-decoupled v6 + [v14] formant + [v15] timbral
   //   Bass → structural breathing, radial expansion, density
-  //   Mid  → rotation, twisting, lobe deformation
+  //   MidCore → formant turbulence (growl texture)
+  //   UpperMid → rotation, twisting, lobe deformation
   //   Hi   → color shift, shimmer, edge detail
+  //   FormantDrive → continuous noise-field perturbation
+  //   SpectralCentroid → noise frequency + color temperature shift
+  //   BeatPhase → groove-locked periodic motion (rotation, breathing)
+  //   ── [v15] Timbral descriptors ──
+  //   Roughness LOW  → structural morph: dimension shifts, rotation axis changes
+  //   Roughness HIGH → dimension locked: high-freq vibration within current form
+  //   Flatness LOW   → particle convergence (tonal → crystalline order)
+  //   Flatness HIGH  → particle dispersion (noisy → chaotic scatter)
+  //   MFCC C2        → curvature deformation (formant structure → shape bending)
   // ════════════════════════════════════════════════════════════
   } else {
 
+    // [v15] Timbral descriptor influence weights
+    // smoothRough: 0 = smooth/pad, 1 = distorted/harsh
+    // invRough: complement — high when smooth, low when rough
+    float smoothRough = clamp(uRoughness, 0.0, 1.0);
+    float invRough = 1.0 - smoothRough;
+    // flatGate: 0 = tonal/narrow, 1 = noisy/broadband
+    float flatGate = clamp(uFlatness, 0.0, 1.0);
+
     float noiseFreq=0.6+mMid*2.2;
-    // [v10] lowMid adds pad/chord warmth, mid is now narrower (vocal/lead only)
-    float nm=(0.06+uMid*0.14+uLowMid*0.08+uBass*0.12)*(0.6+mFast*1.2);
+    // [v14] formantDrive modulates noise frequency — formant sweeps warp the field
+    float centroidFreq = 1.0 + uSpectralCentroid * 2.0;  // dark=low freq noise, bright=high
+    // [v14] midCore drives turbulence displacement, upperMid drives finer detail
+    float nm=(0.06+uMidCore*0.16+uUpperMid*0.10+uLowMid*0.08+uBass*0.12)*(0.6+mFast*1.2);
+    // [v14] formantDrive adds continuous turbulence modulation
+    nm += uFormantDrive * 0.18 * sin(s0 * 8.0 + t * centroidFreq);
+    // [v15] Flatness: noisy → extra turbulence spread, tonal → tighter coherent motion
+    nm *= (0.8 + flatGate * 0.5);
     pos+=nd*nm;
+
+    // [v15] MFCC C2: spectral curvature drives structural bending
+    // Dual-peak spectrum (growl formants) → particles bend along curvature field
+    // Single-peak → particles align along straight radii
+    float curveBend = uMFCC2 * 0.08;
+    pos.xz += vec2(sin(pos.y * 4.0 + t * 0.5), cos(pos.y * 3.5 + t * 0.4)) * curveBend;
 
     if(aLayer<0.5){
       // BASS: structural breathing (scale pulsation)
-      float breathScale=0.4+mSlow*1.2;
+      // [v14] beatPhase adds groove-locked breathing cycle
+      float grooveBreath = sin(uBeatPhase * 6.2832) * 0.08 * uBass;
+      float breathScale=0.4+mSlow*1.2 + grooveBreath;
       pos*=breathScale;
       float chaos2 = uChaosLevel - 1.0;
       if(chaos2 > 0.0){
@@ -2380,16 +2691,39 @@ void main(){
       harm *= uBass*0.40+0.04;
       pos+=normalize(pos+0.001)*harm;
       pos+=normalize(pos+0.001)*uBass*(0.5+0.4*sin(s1+t*2.0))*breathScale;
+      // [v14] FormantDrive: inner layer structural perturbation
+      float formantWarp = uFormantDrive * 0.06;
+      pos += vec3(
+        sin(s0 * 5.3 + t * centroidFreq * 0.5) * formantWarp,
+        cos(s1 * 4.7 + t * centroidFreq * 0.4) * formantWarp,
+        sin(s2 * 6.1 + t * centroidFreq * 0.6) * formantWarp
+      );
+      // [v15] Roughness HIGH: inner layer vibrates in place (locked dimension)
+      // High-freq oscillation scaled by roughness — buzz within the form
+      float roughVibrate = smoothRough * 0.04;
+      pos += vec3(
+        sin(s0 * 25.0 + t * 12.0) * roughVibrate,
+        cos(s1 * 22.0 + t * 11.0) * roughVibrate,
+        sin(s2 * 28.0 + t * 13.0) * roughVibrate
+      );
       // HI: micro-shimmer on inner layer particles
       pos += vec3(sin(s0*16.+t*5.2), cos(s1*14.+t*4.8), sin(s2*18.+t*6.1)) * uHi * 0.04;
     } else if(aLayer<1.5){
-      // MID: lobe rotation and twisting (melodic motion)
+      // [v14] UpperMid: primary rotation driver (lead/melody motion)
       float lobeAngle=sin(t*0.13+s0*2.)*mMid*2.8;
       pos.xz=rot2(lobeAngle)*pos.xz;
       harm += sin(s0*2.+t*1.2)*0.5+sin(s0*4.+t*2.4-s1)*0.25+sin(s0*6.+t*3.6)*0.12;
-      harm *= uMid*0.35+0.03;
-      pos.yz=rot2((uMid*2.0*length(pos.xz)+t*0.2+harm)*0.4)*pos.yz;
-      pos+=normalize(pos+0.001)*(uMid*0.40+mFast*0.15);
+      harm *= uUpperMid*0.30+uMidCore*0.15+0.03;
+      pos.yz=rot2((uUpperMid*2.0*length(pos.xz)+t*0.2+harm)*0.4)*pos.yz;
+      pos+=normalize(pos+0.001)*(uUpperMid*0.35+uMidCore*0.20+mFast*0.15);
+      // [v14] FormantDrive: mid-layer tangential push (growl "expression")
+      if(uFormantDrive > 0.01){
+        float tangentStr = uFormantDrive * 0.10;
+        pos.xz += vec2(-pos.z, pos.x) * tangentStr / max(length(pos.xz), 0.1);
+      }
+      // [v15] Roughness: mid-layer high-freq jitter when rough
+      float roughJitter = smoothRough * smoothRough * 0.03;
+      pos += vec3(sin(s0*30.+t*15.), cos(s1*27.+t*14.), sin(s2*33.+t*16.)) * roughJitter;
       // BASS: slight radial breathing on mid layer too
       pos *= 1.0 + uBass * 0.08 * sin(t*0.7 + s0*2.0);
     } else {
@@ -2402,19 +2736,36 @@ void main(){
       harm *= uHi*0.32+0.05;
       pos+=nd*harm*0.9;
       pos+=normalize(pos+0.001)*uHi*0.20;
+      // [v15] Flatness HIGH: outer particles scatter/randomize (noise → chaos)
+      float flatScatter = flatGate * 0.06;
+      pos += vec3(
+        hash(s0*17.3+s1) - 0.5,
+        hash(s1*13.7+s2) - 0.5,
+        hash(s2*19.1+s0) - 0.5
+      ) * flatScatter;
+      // [v15] Flatness LOW: outer particles converge toward radial lines (tonal → order)
+      float flatConverge = invRough * (1.0 - flatGate) * 0.04;
+      vec3 radialDir = normalize(pos + 0.001);
+      pos = mix(pos, radialDir * length(pos), flatConverge);
       // HI: flicker on outer layer (hi-hat sparkle)
       float flickOuter = step(0.48, fract(s0*18.0 + t * uHiDense * 12.0));
       alphaMult *= (0.6 + 0.4 * flickOuter);
     }
 
-    // MID: global twist/rotation (pure mid, no energy blend)
-    float twistAmt=uMid*1.5*(0.3+mFast*1.4);
-    // [v13] Reduced hiSpin: uHiDense fluctuates too fast → rotation jerks
-    // Halved coefficients for smoother rotational response
+    // [v15] Roughness LOW → rotation axis shifts (structural morph, dimension change)
+    // When smooth: slow, shifting rotation axes create evolving 3D structure
+    // When rough: axes lock, no morph, just vibration within fixed form
+    float morphRate = invRough * 0.12;  // only morphs when smooth
+    float morphPhaseXZ = sin(t * 0.07 + uMFCC2 * 0.5) * morphRate;
+    float morphPhaseXY = cos(t * 0.05 - uMFCC1 * 0.3) * morphRate;
+
+    // [v14] UpperMid: primary twist driver
+    float twistAmt=uUpperMid*1.2+uMidCore*0.5*(0.3+mFast*1.4);
     float hiSpin2 = uHiDense * 0.7 + uDropAlert * 0.8;
-    pos.xz=rot2(twistAmt*0.28+t*0.18+hiSpin2)*pos.xz;
-    pos.xy=rot2(twistAmt*0.16-t*0.11-hiSpin2*0.5)*pos.xy;
-    // [v13] HI edge shimmer: reduced from 0.12 to 0.07, lower freq
+    float grooveRot = sin(uBeatPhase * 6.2832) * 0.03 * uEnergy;
+    pos.xz=rot2(twistAmt*0.28+t*0.18+hiSpin2+grooveRot+morphPhaseXZ)*pos.xz;
+    pos.xy=rot2(twistAmt*0.16-t*0.11-hiSpin2*0.5+morphPhaseXY)*pos.xy;
+    // [v13] HI edge shimmer
     pos+=normalize(pos+0.001)*sin(s0*13.+t*3.5)*uHi*0.07;
 
     // BASS: kick shockwave (structural radial pulse)
@@ -2426,9 +2777,7 @@ void main(){
       kickGlow=w*0.5;
     }
     if(uSnare>0.01){
-      // [v13] Softer snare response: lower oscillation freq, reduced amp
-      // Was t*22/t*19 — too jittery. Now t*8/t*6 for a smoother push.
-      float snrStr = uSnare * uSnare;  // squared for softer onset
+      float snrStr = uSnare * uSnare;
       pos.y+=sin(s1*18.+t*8.)*snrStr*0.06;
       pos.x+=cos(s0*15.+t*6.)*snrStr*0.04;
     }
@@ -2441,14 +2790,21 @@ void main(){
     pos.y*=0.62;
 
     // [v10] Pump: attractor cloud compresses on kick, breathes out between beats
-    // Layer-weighted: inner layers compress more (dense core feel)
     float entPumpStr = uPump * (aLayer < 0.5 ? 0.16 : (aLayer < 1.5 ? 0.12 : 0.06));
     pos *= (1.0 - entPumpStr);
 
-    // HI: color temperature shift — hi pushes hue cooler (toward teal/blue)
+    // [v15] Color: timbral descriptors modulate color
+    // SpectralCentroid: dark → warm gold, bright → cool teal
+    // MFCC1 (tilt): bass-heavy → deeper saturation, treble-heavy → desaturated
+    // Roughness: rough → slight red/orange push (aggressive), smooth → pure
     float entHiShift = uHi * 0.08;
     float entBassShift = uBass * 0.05;
-    vHue=aLayer<0.5 ? 0.0+pos.y*0.06 - entBassShift : (aLayer<1.5 ? 0.33+pos.x*0.05 + entHiShift*0.5 : 0.67+pos.z*0.04 + entHiShift);
+    float centroidColorShift = (uSpectralCentroid - 0.5) * 0.06;
+    float roughColorPush = smoothRough * 0.03;  // rough → warm
+    float tiltShift = uMFCC1 * 0.02;            // tilt → subtle tint
+    vHue=aLayer<0.5 ? 0.0+pos.y*0.06 - entBassShift + centroidColorShift - roughColorPush + tiltShift
+        : (aLayer<1.5 ? 0.33+pos.x*0.05 + entHiShift*0.5 + centroidColorShift - roughColorPush * 0.5
+        : 0.67+pos.z*0.04 + entHiShift + centroidColorShift + roughColorPush * 0.5);
     vDepth = pos.z + 1.5;
   }
 
@@ -2506,6 +2862,9 @@ void main(){
   szEnergy += uSpectralFlux * 1.8;
   // [v9] Burst radius = momentary size surge (proportional to burst scale)
   szEnergy += uBurstRadius * 0.8;
+  // [v15] Flatness: tonal → particles grow (converge), noisy → particles shrink (scatter)
+  float flatSizeMod = 1.0 + (0.5 - uFlatness) * 0.15;  // tonal → +7.5%, noisy → -7.5%
+  szBase *= flatSizeMod;
 
   float psMax, psMult;
   if(sty>0.5&&sty<1.5){
@@ -2552,6 +2911,7 @@ void main(){
   vStyle=uStyle;
   vHiEnergy=uHi;
   vBassWeight=uBassRatio;
+  vRoughness=clamp(uRoughness, 0.0, 1.0);  // [v15] pass to fragment
 }
 `;
 
@@ -2565,6 +2925,7 @@ varying float vDepth;
 varying float vFlash;
 varying float vHiEnergy;
 varying float vBassWeight;
+varying float vRoughness;  // [v15]
 
 void main(){
   vec2 uv=gl_PointCoord-0.5;
@@ -2575,8 +2936,10 @@ void main(){
 
   // Cosmos: hi energy controls halo spread (hi active = diffuse glow, quiet = sharp points)
   // Other styles: unchanged
-  float coreSharp = (sty>0.5&&sty<1.5) ? 28.0 : 20.0;
-  float haloSharp = (sty>0.5&&sty<1.5) ? (3.2 - vHiEnergy * 1.8) : 3.5;
+  // [v15] Roughness modulates core/halo ratio: rough=tighter core, smooth=softer halo
+  float roughHaloMod = vRoughness * 0.8;  // rough → sharper halo
+  float coreSharp = (sty>0.5&&sty<1.5) ? 28.0 : (20.0 + vRoughness * 6.0);
+  float haloSharp = (sty>0.5&&sty<1.5) ? (3.2 - vHiEnergy * 1.8) : (3.5 + roughHaloMod);
   haloSharp = max(haloSharp, 1.2);
   float core=exp(-d*d*coreSharp);
   float halo=exp(-d*d*haloSharp)*0.28;
@@ -3196,6 +3559,17 @@ function render(ts){
   u1(pProg,'uLowMid',        AP.sLowMid);
   u1(pProg,'uPump',          AP.pump);
   u1(pProg,'uMegaPump',      AP.megaPump);
+  // [v14] mid-band split + formant dynamics + groove lock
+  u1(pProg,'uMidCore',       AP.sMidCore);
+  u1(pProg,'uUpperMid',      AP.sUpperMid);
+  u1(pProg,'uFormantDrive',  AP.formantDrive);
+  u1(pProg,'uBeatPhase',     AP.beatPhase);
+  u1(pProg,'uSpectralCentroid', AP.spectralCentroid);
+  // [v15] timbral descriptors
+  u1(pProg,'uFlatness',        AP.spectralFlatness);
+  u1(pProg,'uRoughness',       AP.roughness);
+  u1(pProg,'uMFCC1',           AP.mfcc1);
+  u1(pProg,'uMFCC2',           AP.mfcc2);
   // [v12] camera uniforms
   u1(pProg,'uCamZoom',       CAM.zoom);
   u1(pProg,'uCamOffX',       CAM.offX);
