@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Entropic Field</title>
+<title>Entropic Field v14</title>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
 html,body { width:100%; height:100%; background:#000; overflow:hidden; }
@@ -1284,6 +1284,11 @@ function onSongEnded(){
 function showEndOverlay(){
   isPlaying=false;
   if(srcNode){ try{srcNode.stop();}catch(e){} srcNode=null; }
+  // [v16] Clear audio buffer so Space can't replay after returning
+  abuf=null;
+  songDuration=0;
+  startOffset=0;
+  startTime=0;
   if(actx && actx.state === 'suspended') actx.resume();
   fnEl.textContent='';
   pbEl.style.display='none';
@@ -1598,7 +1603,7 @@ let currentStyle = 0;
 
 const STYLES = [
   { name:'Entropic', icon:'✦\uFE0E', bloomR:1.05, bloomG:0.88, bloomB:0.50 },
-  { name:'Cosmos',   icon:'✵\uFE0E', bloomR:0.40, bloomG:0.65, bloomB:1.60 },
+  { name:'Cosmos',   icon:'✵\uFE0E', bloomR:0.60, bloomG:0.50, bloomB:1.40 },
   { name:'Sacra',    icon:'✡\uFE0E', bloomR:1.30, bloomG:0.65, bloomB:0.20 },
   { name:'Geometry', icon:'◈\uFE0E', bloomR:0.55, bloomG:0.98, bloomB:1.20 },
   { name:'Organic',  icon:'⬡\uFE0E', bloomR:0.45, bloomG:1.15, bloomB:0.40 },
@@ -2079,7 +2084,7 @@ void main(){
     
     // ── SPIRAL ARM STRUCTURE (logarithmic spiral) ──────────────
     // 3-arm galaxy: θ_arm = θ - k·ln(r), repeat every 2π/3
-    float armTightness = 3.2;  // 降低值让螺旋臂更舒展开阔
+    float armTightness = 2.8;  // [v16] slightly looser for wider visible arms
     float armNumber = 3.0;
     float spiralPhase = baseAngle - armTightness * log(max(rTarget, 0.01));
     
@@ -2087,8 +2092,8 @@ void main(){
     float armAngle = mod(spiralPhase, 6.2832 / armNumber);
     armAngle = abs(armAngle - 3.1416 / armNumber);  // distance to nearest arm
     
-    // Particle density boost in arms (Gaussian profile)
-    float armDensity = exp(-armAngle * armAngle * 20.0);
+    // Particle density boost in arms — [v16] sharper profile for clearer arm definition
+    float armDensity = exp(-armAngle * armAngle * 35.0);
     
     // ── DUST LANES & TURBULENCE ────────────────────────────────
     // Procedural noise creates filamentary dust structures
@@ -2119,6 +2124,16 @@ void main(){
     float finalRadius = rTarget;
     float finalAngle = baseAngle + totalRotation;
     
+    // [v16] Spiral arm angular attraction — pull particles toward nearest arm
+    // This creates visible density contrast in position, not just brightness
+    float armPeriod = 6.2832 / armNumber;
+    float armCenterDist = mod(spiralPhase, armPeriod) - armPeriod * 0.5; // signed dist to arm center
+    float armPull = armCenterDist * 0.35 * (1.0 - armDensity);  // pull stronger for inter-arm particles
+    // Only disk particles get arm attraction (core is round, halo is diffuse)
+    if(aLayer > 0.5 && aLayer < 1.5){
+      finalAngle -= armPull * 0.4;
+    }
+    
     // ── KICK: EXPLOSIVE SHOCKWAVE BURST ────────────────────────
     // Radial shockwave propagates outward, compresses inward
     if(uKick > 0.01){
@@ -2145,14 +2160,14 @@ void main(){
     vec2 diskPos = vec2(cos(finalAngle), sin(finalAngle)) * finalRadius;
     diskPos += vortexPull;
     
-    // Height (Y axis): 增加垂直厚度，创造立体的盘状结构
+    // Height (Y axis): moderate vertical extent for 3D depth
     float diskThickness = 0.08;
     if(aLayer < 0.5){
-      diskThickness = 0.15;  // core: 核心球状膨胀
+      diskThickness = 0.18;  // core: bulge
     } else if(aLayer < 1.5){
-      diskThickness = 0.25;  // disk: 主盘有明显厚度
+      diskThickness = 0.28;  // disk: visible thickness
     } else {
-      diskThickness = 0.45;  // halo: 外围弥散成球形
+      diskThickness = 0.50;  // halo: diffuse sphere
     }
     
     // 根据半径调整厚度 - 外围更蓬松
@@ -2170,7 +2185,7 @@ void main(){
     pos = vec3(diskPos.x, heightBase, diskPos.y);
     
     // Add layer-specific micro-turbulence
-    float turbScale = (0.08 + uEnergy * 0.22) * dustFactor;  // 增强扰动强度
+    float turbScale = (0.08 + uEnergy * 0.22) * dustFactor;
     pos += nd * turbScale;
     
     // Harmonic radial expansion + MULTI-DIMENSIONAL CORE DYNAMICS
@@ -2315,37 +2330,49 @@ void main(){
     pos *= 0.95;  // 从 1.35 降到 0.95，让粒子分布更广
     
     // ── COLOR ZONES (radial gradient + HI-DRIVEN COLOR TEMPERATURE) ──
-    // Base hue from radial position, then hi shifts toward cooler/bluer
-    // [v14] spectralCentroid modulates overall color temperature
-    float hiColorShift = uHi * 0.10;   // hi active = push toward blue-violet
-    float bassWarmShift = uBass * 0.06; // bass active = push toward warm gold
-    float centroidHueShift = (uSpectralCentroid - 0.5) * 0.06; // dark=warm, bright=cool
-    float zoneMix = clamp(rTarget * 1.2, 0.0, 1.0);
+    // [v16] Richer color: spatially coherent patches from gas/dust, NOT random per-particle noise
+    float hiColorShift = uHi * 0.10;
+    float bassWarmShift = uBass * 0.06;
+    float centroidHueShift = (uSpectralCentroid - 0.5) * 0.06;
+    
+    // Spatially coherent hue offsets — gas pockets and dust create COLOR PATCHES
+    // These vary smoothly in space (not per-particle), creating nebula-like regions
+    float gasHueShift = (gasPockets - 0.5) * 0.08;   // warm/cool gas patches
+    float dustHueShift = (dustFactor - 0.5) * 0.05;   // dust lanes shift color
+    float armHueShift = (armDensity - 0.5) * 0.04;    // arms vs inter-arm
     
     if(aLayer < 0.5){
-      // Core: blue-white, hi pushes deeper blue, bass pushes white-hot
-      vHue = 0.54 + pos.y * 0.04 + gasPockets * 0.03 + hiColorShift - bassWarmShift + centroidHueShift;
+      // Core: blue-white → cyan, small variation
+      vHue = 0.58 + pos.y * 0.04 + hiColorShift - bassWarmShift + centroidHueShift
+           + gasHueShift * 0.4;
     } else if(aLayer < 1.5){
-      // Disk: violet-magenta, hi pushes more violet, bass warms toward rose
-      vHue = 0.72 + armDensity * 0.06 - dustFactor * 0.05 + hiColorShift * 0.7 - bassWarmShift * 0.5 + centroidHueShift * 0.7;
+      // Disk: violet-magenta with gas pocket color patches
+      vHue = 0.72 + armHueShift + dustHueShift
+           + hiColorShift * 0.7 - bassWarmShift * 0.5 + centroidHueShift * 0.7
+           + gasHueShift;
     } else {
-      // Halo: gold-rose, hi pushes toward violet, bass deepens gold
-      vHue = 0.90 + pos.x * 0.04 + gasPockets * 0.03 + hiColorShift * 1.2 - bassWarmShift * 0.8 + centroidHueShift * 1.2;
+      // Halo: rose-amber with warm gas pocket streaks
+      vHue = 0.88 + pos.x * 0.04 + hiColorShift * 1.2
+           - bassWarmShift * 0.8 + centroidHueShift * 1.2
+           + gasHueShift * 0.6 + dustHueShift * 0.4;
     }
     
     // ── BRIGHTNESS NORMALIZATION ────────────────────────────────
     // Core is densest → aggressively dim per particle
     // Halo is sparse  → brighter per particle  
     if(aLayer < 0.5){
-      alphaMult = 0.55 * (0.6 + armDensity * 0.3);  // reduced from 0.80
+      alphaMult = 0.55 * (0.55 + armDensity * 0.40);  // [v16] restored — tilt reduces overlap
     } else if(aLayer < 1.5){
-      alphaMult = 0.85 * (0.5 + armDensity * 0.4 + gasPockets * 0.3);  // reduced from 1.10
+      alphaMult = 0.85 * (0.45 + armDensity * 0.45 + gasPockets * 0.25);
+      // [v16] Inter-arm voids are distinctly darker — shows spiral structure
+      float interArmDim = 1.0 - (1.0 - armDensity) * 0.40;
+      alphaMult *= interArmDim;
     } else {
-      alphaMult = 1.20 * (0.7 + gasPockets * 0.4);  // reduced from 1.40
+      alphaMult = 1.05 * (0.65 + gasPockets * 0.35);
     }
     
-    // Dust lanes reduce brightness
-    alphaMult *= (0.5 + dustFactor * 0.5);
+    // Dust lanes reduce brightness — [v16] stronger contrast
+    alphaMult *= (0.35 + dustFactor * 0.65);
     // [v10] Pump dims galaxy on compression, opens on release
     alphaMult *= (1.0 - uPump * 0.12);
     
@@ -2828,8 +2855,18 @@ void main(){
   float fillY = max(1.0, uAspect * 0.58);
   pos.y *= fillY;
   
-  // Cosmos: reduce overall scale to make galaxy fill the screen
-  float globalScale = (sty>0.5&&sty<1.5) ? 0.30 : 0.42;
+  // [v16] Cosmos: tilt the galaxy ~35° toward the viewer so spiral arms are visible
+  // Without this, the galaxy is seen edge-on (flat horizontal band, no structure)
+  if(sty > 0.5 && sty < 1.5){
+    float tiltAngle = 0.60;  // ~35 degrees
+    float cy = cos(tiltAngle), sy = sin(tiltAngle);
+    float oldY = pos.y, oldZ = pos.z;
+    pos.y = oldY * cy - oldZ * sy;
+    pos.z = oldY * sy + oldZ * cy;
+  }
+  
+  // Cosmos: scale up to fill more of the screen
+  float globalScale = (sty>0.5&&sty<1.5) ? 0.42 : 0.42;
   pos *= globalScale;
 
   // ── [v12] Camera transform — song structure drives perspective ──
@@ -2869,7 +2906,8 @@ void main(){
   float psMax, psMult;
   if(sty>0.5&&sty<1.5){
     psMax  = 7.0;
-    psMult = 1.05;
+    // [v16] Cosmos: alphaMult encodes arm density — brighter (arm) particles slightly larger
+    psMult = 0.95 + alphaMult * 0.20;
   } else if(sty>3.5&&sty<4.5){
     psMax  = 5.0;
     psMult = 0.95;
@@ -2904,6 +2942,13 @@ void main(){
     brightFloor = 0.14;          // higher floor — no near-invisible particles
     brightCeil  = 1.35;          // allow brighter peaks
     depthDimFinal = mix(depthDim, 1.0, 0.35);  // soften depth dimming by 35%
+  }
+  // [v16] Cosmos: lift brightness floor and soften depth dimming
+  // so disk and halo particles are visible — galaxy feels fuller
+  if(sty > 0.5 && sty < 1.5){
+    rawBright += 0.06;
+    brightFloor = 0.10;
+    depthDimFinal = mix(depthDim, 1.0, 0.25);
   }
   vBright=clamp(rawBright, brightFloor, brightCeil) * alphaMult * depthDimFinal;
   vAlphaMult=alphaMult;
@@ -2955,57 +3000,68 @@ void main(){
   vec3 col;
 
   if(sty>0.5&&sty<1.5){
-    // ── COSMOS v10 COLOR — frequency-driven galactic palette ────
-    // Hi energy shifts entire palette toward cooler blue-violet
-    // Bass energy warms toward gold-white
-    // Fragment receives vHue already shifted by vertex shader
+    // ── COSMOS v16 COLOR — rich gradients within natural hue bands ────
+    // Core hue ~0.50-0.66, Disk ~0.62-0.85, Halo ~0.78-0.98
+    // Smooth continuous gradient across the full range with rich color variety
 
-    // Define color anchors
-    vec3 coreBlueWhite = vec3(0.65, 0.80, 1.35);
-    vec3 coreCyan      = vec3(0.35, 0.68, 1.20);
-    
-    vec3 midViolet     = vec3(1.05, 0.42, 1.25);
-    vec3 midMagenta    = vec3(1.20, 0.30, 0.95);
-    
-    vec3 rimGoldRose   = vec3(1.30, 1.05, 0.95);
-    vec3 rimDeepPink   = vec3(1.20, 0.95, 0.90);
-    
     float hh = fract(h);
     
-    // Core zone: h ∈ [0.50, 0.65]
-    if(hh >= 0.50 && hh < 0.65){
-      float t = (hh - 0.50) / 0.15;
-      col = mix(coreCyan, coreBlueWhite, t);
-      // Bass: warm core tint (reduced from 0.25 to 0.15 to prevent blowout)
-      col = mix(col, vec3(1.3, 1.2, 1.0), core * 0.15 * (1.0 + vBassWeight * 0.3));
-      col.b += vHiEnergy * 0.12 * core;
+    // 5-zone gradient tuned to actual hue distribution
+    if(hh < 0.52){
+      // Cool edge: deep indigo-blue (rare particles pushed by hi energy)
+      col = vec3(0.18, 0.20, 0.70);
     }
-    // Mid zone: h ∈ [0.65, 0.88]
-    else if(hh >= 0.65 && hh < 0.88){
-      float t = (hh - 0.65) / 0.23;
-      col = mix(midViolet, midMagenta, t);
-      col = mix(col, vec3(1.1, 0.95, 1.1), core * 0.12);
-      col.b += vHiEnergy * 0.10;
+    else if(hh < 0.60){
+      // Core inner: indigo → cyan-white
+      float t = (hh - 0.52) / 0.08;
+      vec3 deepCyan = vec3(0.22, 0.48, 0.92);
+      vec3 brightCyan = vec3(0.50, 0.70, 1.05);
+      col = mix(deepCyan, brightCyan, t);
     }
-    // Rim zone: h ∈ [0.88, 1.00]
+    else if(hh < 0.70){
+      // Core-to-disk transition: cyan-white → lavender → violet
+      float t = (hh - 0.60) / 0.10;
+      vec3 paleLavender = vec3(0.62, 0.55, 0.90);
+      vec3 richViolet = vec3(0.72, 0.30, 0.88);
+      col = mix(paleLavender, richViolet, t);
+    }
+    else if(hh < 0.82){
+      // Disk: violet → magenta-rose
+      float t = (hh - 0.70) / 0.12;
+      vec3 magenta = vec3(0.85, 0.25, 0.68);
+      vec3 warmRose = vec3(0.92, 0.50, 0.52);
+      col = mix(magenta, warmRose, t);
+    }
+    else if(hh < 0.92){
+      // Halo inner: rose → peach-amber
+      float t = (hh - 0.82) / 0.10;
+      vec3 peach = vec3(0.95, 0.70, 0.50);
+      vec3 amber = vec3(0.90, 0.75, 0.40);
+      col = mix(peach, amber, t);
+    }
     else {
-      float t;
-      if(hh < 0.12) t = hh / 0.12;
-      else t = (hh - 0.88) / 0.12;
-      col = mix(rimGoldRose, rimDeepPink, t);
-      col.r += vBassWeight * 0.06;
-      col = mix(col, vec3(1.25, 1.15, 1.0), core * 0.08);
+      // Halo outer: amber → dusty pink fade
+      float t = (hh - 0.92) / 0.08;
+      vec3 amber = vec3(0.90, 0.75, 0.40);
+      vec3 dustyPink = vec3(0.72, 0.48, 0.50);
+      col = mix(amber, dustyPink, t);
     }
     
-    // Halo glow: hi energy makes halos more prominent (diffuse glow)
-    vec3 haloTint = vec3(0.65 + vHiEnergy * 0.20, 0.45, 1.00 + vHiEnergy * 0.15);
-    col += haloTint * halo * (0.35 + vHiEnergy * 0.30) * (1.0 - core);
+    // Core particles get subtle white-hot brightening
+    col = mix(col, vec3(0.90, 0.88, 0.82), core * 0.10 * (1.0 + vBassWeight * 0.15));
     
-    // Burst flash: bass-weighted = gold-white, hi-weighted = blue-white
-    vec3 burstColor = mix(vec3(1.5, 1.3, 0.9), vec3(0.9, 1.1, 1.6), vHiEnergy);
-    col = mix(col, burstColor, vFlash * vFlash * 0.65);
+    // Halo glow tint
+    vec3 haloTint = vec3(0.50 + vHiEnergy * 0.12, 0.35, 0.75 + vHiEnergy * 0.10);
+    col += haloTint * halo * (0.25 + vHiEnergy * 0.20) * (1.0 - core);
     
-    gl_FragColor = vec4(col, alpha * 0.80);
+    // Burst flash
+    vec3 burstColor = mix(vec3(1.1, 1.0, 0.75), vec3(0.70, 0.85, 1.15), vHiEnergy);
+    col = mix(col, burstColor, vFlash * vFlash * 0.45);
+    
+    // [v16] Additive blend: core particles need lower alpha, halo needs higher
+    // vAlphaMult is low for core (~0.3-0.5), high for halo (~0.7-1.0)
+    float cosmosAlpha = alpha * mix(0.35, 0.70, clamp(vAlphaMult * 1.2, 0.0, 1.0));
+    gl_FragColor = vec4(col, cosmosAlpha);
 
   } else if(sty>1.5&&sty<2.5){
     // ── SACRA — hi warms toward crimson, bass deepens gold ──
@@ -3222,9 +3278,11 @@ void main(){
   col=mix(uBgTint, col, clamp(lum*3.5,0.,1.));
 
   // Cosmos: extra contrast crush
+  // [v16] Softened: clamp before S-curve to prevent blowout
   if(uStyle>0.5&&uStyle<1.5){
+    col = min(col, vec3(1.6));
     col = col * col * (3.0 - 2.0*col);
-    col *= 1.25;
+    col *= 1.15;
   }
 
   vec2 q=(uv-0.5)*(1.0/(uBassScale));
@@ -3514,13 +3572,9 @@ function render(ts){
   }
 
   // ── P2: draw particles ────────────────────────────────────
-  // Cosmos uses normal alpha blend (not additive) — dense regions
-  // saturate to color not to white. Other styles keep additive.
-  if(currentStyle===1){
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-  } else {
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
-  }
+  // [v16] All styles use additive blending — sparse outer particles need to accumulate
+  // Cosmos overexposure is now controlled per-particle in fragment shader
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
   gl.useProgram(pProg);
   u1(pProg,'uT',T);
   u1(pProg,'uBass',  AP.rb);
@@ -3580,9 +3634,7 @@ function render(ts){
   bindAttr(pProg,'aLayer',layerBuf,1);
   
   let drawRatio = 1.0;
-  if(currentStyle===1){
-    drawRatio = 1.0 - 0.30 * Math.max(0, Math.min(1, (AP.relativeIntensity - 0.45) / 0.30));
-  }
+  // [v16] Removed Cosmos draw reduction — halo particles must not be culled
   const drawCount = Math.floor(N * drawRatio);
   gl.drawArrays(gl.POINTS,0,drawCount);
 
@@ -3637,16 +3689,16 @@ function render(ts){
     const h2 = AP.rh*AP.rh;
     const r  = AP.relativeIntensity;
     
-    bloomStr = 0.06 + b2*(2.00 + r*2.20) + k2*(3.20 + r*4.00) + m2*1.00 + h2*1.50;
+    bloomStr = 0.06 + b2*(1.40 + r*1.60) + k2*(2.20 + r*2.80) + m2*0.80 + h2*1.20;
     // [v10] lowMid contributes to bloom (pads/chords = warm glow)
-    bloomStr += AP.rLowMid * AP.rLowMid * 0.40;
+    bloomStr += AP.rLowMid * AP.rLowMid * 0.30;
     // [v9] Spectral flux adds bloom surge on any transient
-    bloomStr += AP.spectralFlux * 2.0;
+    bloomStr += AP.spectralFlux * 1.5;
     // [v9] Burst bloom surge
-    bloomStr += AP.burstRadius * 1.5;
+    bloomStr += AP.burstRadius * 1.2;
     // [v10] Pump modulates bloom — compressed=ducked, release=bloom surge
     bloomStr *= (1.0 - AP.pump * 0.20);
-    bloomStr = Math.min(bloomStr, 8.0);
+    bloomStr = Math.min(bloomStr, 5.5);
   } else {
     const r = AP.relativeIntensity;
     const b2 = AP.rb*AP.rb;
